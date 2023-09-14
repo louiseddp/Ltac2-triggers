@@ -129,9 +129,9 @@ Ltac2 Type trigger := [
 
 Ltac2 interpret_trigger_var (tv : trigger_var) :=
   match tv with
-    | TGoal => let h := Control.hyps () in 
+    | TSomeHyp => let h := Control.hyps () in 
         type_of_hyps h
-    | TSomeHyp => let g := Control.goal () in [g]
+    | TGoal => let g := Control.goal () in [g]
   end.
 
 Ltac2 interpret_trigger_eq (a : trigger_var) (b : trigger_var) :=
@@ -208,46 +208,57 @@ Ltac2 interpret_trigger (t : trigger) :=
     | TContains a b => interpret_trigger_contains a b
   end.
 
-Ltac2 mutable triggered_tactics := [].
+(* The name of the tactic triggered + on which hypothesis it should be triggered *)
+Ltac2 (* mutable *) triggered_tactics : (string*(constr_quoted list)) list := [].
+
+Ltac2 trigger_tac_equal (x: string*(constr_quoted list)) (y: string*(constr_quoted list)) :=
+  match x, y with
+    | (s1, l1), (s2, l2) => Bool.and (String.equal s1 s2) (List.equal (fun x y =>
+      let x' := constr_quoted_to_constr x in
+      let y' := constr_quoted_to_constr y in 
+      equal x' y') l1 l2)
+  end. 
+
+(** Triggers for tactics **)
 
 Ltac2 trigger_and_intro := TIs TGoal (TAnd TDiscard TDiscard).
-
 Ltac2 trigger_axiom := TEq TGoal TSomeHyp.
+Ltac2 trigger_intro := TIs TGoal (TArr TDiscard TDiscard).
 
 Ltac2 thunksplit := fun () => ltac1:(split).
-
 Ltac2 thunkassumption := fun () => ltac1:(assumption).
+Ltac2 thunkintro := fun () => ltac1:(intro).
 
 Ltac2 trigs () :=
   [(thunksplit, trigger_and_intro, "split"); 
+   (thunkintro, trigger_intro, "intro");
   (thunkassumption, trigger_axiom, "assumption")].
 
 Ltac2 run (thunk : unit -> unit) := thunk ().
 
 Ltac2 orchestrator () :=
-  let rec trigger' t :=
+  let rec trigger' init_triggers t trig_tac :=
     match t with
     | [] => Message.print (Message.of_string "no trigger found")
     | (tac, trig, message) :: triggers' =>
         match interpret_trigger trig with
           | Some l =>
-            if Bool.neg (Int.equal (List.length l) 0) (* List.mem equal triggered_tactics l  TODO *) then
-              Message.print (Message.of_string "Trigger already applied\n");
-              trigger' triggers'
-            else
-              Message.print (Message.concat 
+              if Bool.and (Bool.neg (Int.equal (List.length l) 0)) (List.mem trigger_tac_equal (message, l) trig_tac) then 
+                Message.print (Message.concat 
+                (Message.of_string message) (Message.of_string " was already applied"));
+                trigger' init_triggers triggers' trig_tac
+              else Message.print (Message.concat 
                 (Message.of_string "Automaticaly applied ") (Message.of_string message));
-(* TODO update reference of triggered *)
-              run tac
-          | None => trigger' triggers'
+                run tac ; Control.enter (fun () => trigger' init_triggers init_triggers ((message, l)::trig_tac))
+          | None => trigger' init_triggers triggers' trig_tac
         end
     end
   in
-  trigger' (trigs ()).
+  trigger' (trigs ()) (trigs ()) triggered_tactics.
 
 
-Goal (forall (A B C D : Prop), A -> B -> C -> D -> (A/\B/\C/\D)).
-intros. orchestrator (). Qed.
+Goal (forall (A B C D : Prop), A -> B -> C -> D -> (A /\ B /\ C /\ D)).
+orchestrator (). Qed.
 
 
 
