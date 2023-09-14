@@ -1,6 +1,27 @@
 From Ltac2 Require Import Ltac2.
 From Ltac2 Require Import Constr.
 
+(** Or elim **)
+
+Lemma or_elim (A B C : Prop) : A \/ B -> (A -> C) -> (B -> C) -> C.
+Proof.
+intros Hor HA HB.
+destruct Hor as [HorA | HorB].
+  * apply HA. assumption.
+  * apply HB. assumption.
+Qed.
+
+Ltac or_elim A B := apply or_elim with (A := A) (B := B).
+
+Lemma test_or_elim (A B C : Prop) : A \/ B -> A \/ B \/ C.
+Proof.
+intros Hor.
+ltac1:(or_elim A B). 
+  * assumption.
+  * intro Ha. left. assumption.
+  * intro Hb. right. left. assumption.
+Qed. 
+
 (** Utilities **)
 
 Ltac2 rec type_of_hyps (l : (ident * constr option * constr) list) :=
