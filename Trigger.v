@@ -83,7 +83,24 @@ Ltac2 rec constr_to_constr_quoted (c : constr) :=
     And (constr_to_constr_quoted c1) (constr_to_constr_quoted c2)
   else Term c.
 
-Ltac2 rec constr_quoted_to_constr (c: constr_quoted) := (). (* TODO *)
+Ltac2 rec constr_quoted_to_constr (c: constr_quoted) :=
+  match c with
+    | Term c' => c'
+    | Arrow c1 c2 => 
+      let c1' := constr_quoted_to_constr c1 in
+      let c2' := constr_quoted_to_constr c2 in 
+      Unsafe.make (Unsafe.Prod (Binder.make None c1') c2')
+    | Or c1 c2 =>
+      let c1' := constr_quoted_to_constr c1 in
+      let c2' := constr_quoted_to_constr c2 in 
+      Unsafe.make (Unsafe.App 'or (Array.of_list [c1'; c2']))
+    | And c1 c2 =>
+      let c1' := constr_quoted_to_constr c1 in
+      let c2' := constr_quoted_to_constr c2 in 
+      Unsafe.make (Unsafe.App 'and (Array.of_list [c1'; c2']))
+    | Top => 'True
+    | Bottom => 'False
+  end.
 
 (** Triggers **)
 
@@ -191,38 +208,46 @@ Ltac2 interpret_trigger (t : trigger) :=
     | TContains a b => interpret_trigger_contains a b
   end.
 
-Ltac2 mutable triggered_tactics := Array.empty.
+Ltac2 mutable triggered_tactics := [].
 
+Ltac2 trigger_and_intro := TIs TGoal (TAnd TDiscard TDiscard).
 
-(* TODO : 
+Ltac2 trigger_axiom := TEq TGoal TSomeHyp.
 
-let rec trigger prf_st hpt =
-  let triggers =
-    [
-      (trigger_axiom, apply_axiom, "Axiom");
-      (trigger_or_elim, apply_or_elim, "OrElim");
-      (trigger_and_intro, apply_and_intro, "AndIntro");
-      (trigger_brute_rename_hyp, apply_brute_rename, "BruteRenameHyp");
-      (trigger_brute_rename_goal, apply_brute_rename, "BruteRenameGoal");
-    ]
+Ltac2 thunksplit := fun () => ltac1:(split).
+
+Ltac2 thunkassumption := fun () => ltac1:(assumption).
+
+Ltac2 trigs () :=
+  [(thunksplit, trigger_and_intro, "split"); 
+  (thunkassumption, trigger_axiom, "assumption")].
+
+Ltac2 run (thunk : unit -> unit) := thunk ().
+
+Ltac2 orchestrator () :=
+  let rec trigger' t :=
+    match t with
+    | [] => Message.print (Message.of_string "no trigger found")
+    | (tac, trig, message) :: triggers' =>
+        match interpret_trigger trig with
+          | Some l =>
+            if Bool.neg (Int.equal (List.length l) 0) (* List.mem equal triggered_tactics l  TODO *) then
+              Message.print (Message.of_string "Trigger already applied\n");
+              trigger' triggers'
+            else
+              Message.print (Message.concat 
+                (Message.of_string "Automaticaly applied ") (Message.of_string message));
+(* TODO update reference of triggered *)
+              run tac
+          | None => trigger' triggers'
+        end
+    end
   in
-  let rec trigger' triggers =
-    match triggers with
-    | [] -> Left "no trigger found"
-    | (option_trigger, tactic, message) :: triggers' -> (
-        match interpret_trigger prf_st option_trigger with
-        | Some l ->
-            if List.length l > 0 && Hashtbl.mem trigered_tactics l then (
-              print_string "Trigger already applied\n";
-              trigger' triggers')
-            else (
-              print_string @@ "Automaticaly applied " ^ message ^ "\n";
-              Hashtbl.add trigered_tactics l tactic;
-              let l' = List.map (fun x -> Term x) l in
-              tactic l' 0 prf_st hpt)
-        | None -> trigger' triggers')
-  in
-  trigger' triggers *)
+  trigger' (trigs ()).
+
+
+Goal (forall (A B C D : Prop), A -> B -> C -> D -> (A/\B/\C/\D)).
+intros. orchestrator (). Qed.
 
 
 
