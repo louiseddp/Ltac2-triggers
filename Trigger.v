@@ -11,12 +11,12 @@ destruct Hor as [HorA | HorB].
   * apply HB. assumption.
 Qed.
 
-Ltac or_elim A B := apply or_elim with (A := A) (B := B).
+Ltac2 or_elim (a : constr) (b : constr) := apply or_elim with (A := $a) (B := $b).
 
 Lemma test_or_elim (A B C : Prop) : A \/ B -> A \/ B \/ C.
 Proof.
 intros Hor.
-ltac1:(or_elim A B). 
+or_elim 'A 'B. 
   * assumption.
   * intro Ha. left. assumption.
   * intro Hb. right. left. assumption.
@@ -138,10 +138,12 @@ Ltac2 Type rec trigger_form := [
   | TDiscard
   | TMetaVar ].
 
-Ltac2 Type trigger := [
+Ltac2 Type rec trigger := [
   | TEq (trigger_var, trigger_var)
   | TIs (trigger_var, trigger_form) 
   | TContains (trigger_var, trigger_form)
+  | TConj (trigger, trigger) (* two triggers need to be present at the same time *)
+  | TDisj (trigger, trigger) (* one of the two triggers needs to be present *)
   ].
 
 (** Interpretation **)
@@ -222,11 +224,29 @@ Ltac2 interpret_trigger_contains (tv : trigger_var) (tf: trigger_form) :=
       (fun x => interpret_trigger_contains_aux x tf) a
   in flatten_option_list result.
 
-Ltac2 interpret_trigger (t : trigger) :=
+Ltac2 rec interpret_trigger (t : trigger) :=
   match t with
     | TEq a b => interpret_trigger_eq a b
     | TIs a b => interpret_trigger_is a b
     | TContains a b => interpret_trigger_contains a b
+    | TConj t1 t2 => 
+      match interpret_trigger t1 with
+        | Some res => 
+          match interpret_trigger t2 with
+            | Some res' => Some res' 
+            | None => None
+          end
+        | None => None
+      end              
+    | TDisj t1 t2 => 
+      match interpret_trigger t1 with 
+        | Some res => Some res
+        | None => 
+          match interpret_trigger t2 with
+            | Some res' => Some res'
+            | None => None
+          end
+      end
   end.
 
 (* The name of the tactic triggered + on which hypothesis it should be triggered *)
@@ -245,17 +265,47 @@ Ltac2 trigger_tac_equal (x: string*(constr_quoted list)) (y: string*(constr_quot
 Ltac2 trigger_and_intro := TIs TGoal (TAnd TDiscard TDiscard).
 Ltac2 trigger_axiom := TEq TGoal TSomeHyp.
 Ltac2 trigger_intro := TIs TGoal (TArr TDiscard TDiscard).
+Ltac2 trigger_or_elim := TIs TSomeHyp (TOr TMetaVar TMetaVar).
+Ltac2 trigger_left := TIs TGoal (TOr TDiscard TDiscard).
+Ltac2 trigger_right := TIs TGoal (TOr TDiscard TDiscard).
+
+(** Thunks **) 
+
+Ltac2 Type Thunk := [ NoArg (unit-> unit) | WithArgs (constr list -> unit)].
 
 Ltac2 thunksplit := fun () => ltac1:(split).
 Ltac2 thunkassumption := fun () => ltac1:(assumption).
 Ltac2 thunkintro := fun () => ltac1:(intro).
+Ltac2 thunkorelim (l : constr list) := 
+  match l with
+    | [] => fail "no arguments"
+    | [x] => fail "only one argument"
+    | [x; y] => or_elim x y
+    | _ => fail "too many arguments"
+  end.
+Ltac2 thunkleft := fun () => ltac1:(left).
+Ltac2 thunkright := fun () => ltac1:(right).
 
 Ltac2 trigs () :=
-  [(thunksplit, trigger_and_intro, "split"); 
-   (thunkintro, trigger_intro, "intro");
-  (thunkassumption, trigger_axiom, "assumption")].
+  [(NoArg thunksplit, trigger_and_intro, "split"); 
+   (NoArg thunkintro, trigger_intro, "intro");
+  (NoArg thunkassumption, trigger_axiom, "assumption");
+  (WithArgs thunkorelim, trigger_or_elim, "or_elim")
+(*   (NoArg thunkleft, trigger_left, "left");
+  (NoArg thunkright, trigger_right, "right") *)].
 
-Ltac2 run (thunk : unit -> unit) := thunk ().
+Ltac2 run (thunk : Thunk) := 
+  match thunk with
+    | NoArg t => t ()
+    | WithArgs _ => fail "does not run a thunk which takes arguments"
+  end.
+
+Ltac2 run_list (l: constr list) (thunk : Thunk) :=
+  match thunk with
+    | NoArg _ => fail "does not run a thunk with no arguments"
+    | WithArgs t => t l
+  end.
+
 
 Ltac2 orchestrator () :=
   let rec trigger' init_triggers t trig_tac :=
@@ -268,19 +318,31 @@ Ltac2 orchestrator () :=
                 Message.print (Message.concat 
                 (Message.of_string message) (Message.of_string " was already applied"));
                 trigger' init_triggers triggers' trig_tac
-              else Message.print (Message.concat 
+              else (Message.print (Message.concat 
                 (Message.of_string "Automaticaly applied ") (Message.of_string message));
-                run tac ; Control.enter (fun () => trigger' init_triggers init_triggers ((message, l)::trig_tac))
+                if (Int.equal (List.length l) 0) then (* the tactic takes zero arguments *)
+                  run tac
+                else run_list (List.map (fun x => constr_quoted_to_constr x) l) tac ;
+            Control.enter (fun () => trigger' init_triggers init_triggers ((message, l)::trig_tac)))
           | None => trigger' init_triggers triggers' trig_tac
         end
     end
   in
   trigger' (trigs ()) (trigs ()) triggered_tactics.
 
+Tactic Notation "orchestrator" := ltac2:(orchestrator ()).
+
+Section tests.
+Set Default Proof Mode "Classic".
 
 Goal (forall (A B C D : Prop), A -> B -> C -> D -> (A /\ B /\ C /\ D)).
-orchestrator (). Qed.
+orchestrator. Qed.
 
+Goal (forall (A B : Prop), A \/ B -> B \/ A).
+orchestrator. Abort.
+
+
+End tests.
 
 
 
