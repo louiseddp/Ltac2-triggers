@@ -24,6 +24,11 @@ Qed.
 
 (** Utilities **)
 
+Ltac2 third_arg_equal (x : 'a*'b*'c) (y : 'a*'b*'c) (eq : 'c -> 'c -> bool) :=
+  match x, y with
+    | (_, _, u1), (_, _, u2) => eq u1 u2
+  end.
+
 Ltac2 rec type_of_hyps (l : (ident * constr option * constr) list) :=
   match l with
     | [] => []
@@ -130,6 +135,7 @@ Ltac2 Type trigger_var :=
 
 Ltac2 Type rec trigger_form := [
   | TTerm (constr)
+  | TVar (trigger_var)
   | TArr (trigger_form, trigger_form)
   | TAnd (trigger_form, trigger_form)
   | TOr (trigger_form, trigger_form)
@@ -139,7 +145,6 @@ Ltac2 Type rec trigger_form := [
   | TMetaVar ].
 
 Ltac2 Type rec trigger := [
-  | TEq (trigger_var, trigger_var)
   | TIs (trigger_var, trigger_form) 
   | TContains (trigger_var, trigger_form)
   | TConj (trigger, trigger) (* two triggers need to be present at the same time *)
@@ -157,17 +162,15 @@ Ltac2 interpret_trigger_var (tv : trigger_var) :=
     | TGoal => let g := Control.goal () in [g]
   end.
 
-Ltac2 interpret_trigger_eq (a : trigger_var) (b : trigger_var) :=
-  let l1 := interpret_trigger_var a in
-  let l2 := interpret_trigger_var b in
-  if List.exist (fun x => List.mem Constr.equal x l1) l2 then Some [] else None.
-
 Ltac2 rec interpret_constr_with_trigger_form 
   (c : constr_quoted) (tf : trigger_form) :=
   match c, tf with
     | Top, TTop => Some [] 
     | Bottom, TBottom => Some []
     | Term c, TTerm c' => if equal c c' then Some [] else None
+    | Term c, TVar v => 
+       let tv := interpret_trigger_var v in
+       if List.mem equal c tv then Some [] else None
     | Arrow c1 c2, TArr tf1 tf2 => 
       let o1 := interpret_constr_with_trigger_form c1 tf1 in
       let o2 := interpret_constr_with_trigger_form c2 tf2 in
@@ -226,7 +229,6 @@ Ltac2 interpret_trigger_contains (tv : trigger_var) (tf: trigger_form) :=
 
 Ltac2 rec interpret_trigger (t : trigger) :=
   match t with
-    | TEq a b => interpret_trigger_eq a b
     | TIs a b => interpret_trigger_is a b
     | TContains a b => interpret_trigger_contains a b
     | TConj t1 t2 => 
@@ -263,18 +265,22 @@ Ltac2 trigger_tac_equal (x: string*(constr_quoted list)) (y: string*(constr_quot
 (** Triggers for tactics **)
 
 Ltac2 trigger_and_intro := TIs TGoal (TAnd TDiscard TDiscard).
-Ltac2 trigger_axiom := TEq TGoal TSomeHyp.
+Ltac2 trigger_axiom := TIs TGoal (TVar TSomeHyp).
 Ltac2 trigger_intro := TIs TGoal (TArr TDiscard TDiscard).
 Ltac2 trigger_or_elim := TIs TSomeHyp (TOr TMetaVar TMetaVar).
-Ltac2 trigger_left := TIs TGoal (TOr TDiscard TDiscard).
-Ltac2 trigger_right := TIs TGoal (TOr TDiscard TDiscard).
+Ltac2 trigger_left := (TIs TGoal (TOr (TVar TSomeHyp) TDiscard)).
+Ltac2 trigger_right := TIs TGoal (TOr TDiscard (TVar TSomeHyp)).
 
 (** Thunks **) 
 
 Ltac2 Type Thunk := [ NoArg (unit-> unit) | WithArgs (constr list -> unit)].
 
 Ltac2 thunksplit := fun () => ltac1:(split).
-Ltac2 thunkassumption := fun () => ltac1:(assumption).
+Ltac2 thunkassumption := fun () => ltac1:(
+match goal with
+| |- ?G => idtac G;
+assumption
+end).
 Ltac2 thunkintro := fun () => ltac1:(intro).
 Ltac2 thunkorelim (l : constr list) := 
   match l with
@@ -290,9 +296,9 @@ Ltac2 trigs () :=
   [(NoArg thunksplit, trigger_and_intro, "split"); 
    (NoArg thunkintro, trigger_intro, "intro");
   (NoArg thunkassumption, trigger_axiom, "assumption");
-  (WithArgs thunkorelim, trigger_or_elim, "or_elim")
-(*   (NoArg thunkleft, trigger_left, "left");
-  (NoArg thunkright, trigger_right, "right") *)].
+  (WithArgs thunkorelim, trigger_or_elim, "or_elim");
+  (NoArg thunkleft, trigger_left, "left");
+  (NoArg thunkright, trigger_right, "right")].
 
 Ltac2 run (thunk : Thunk) := 
   match thunk with
@@ -317,6 +323,7 @@ Ltac2 orchestrator () :=
               if Bool.and (Bool.neg (Int.equal (List.length l) 0)) (List.mem trigger_tac_equal (message, l) trig_tac) then 
                 Message.print (Message.concat 
                 (Message.of_string message) (Message.of_string " was already applied"));
+(*                 let triggers'' := List.remove (fun x y => third_arg_equal x y String.equal) (tac, trig, message) init_triggers in  *)
                 trigger' init_triggers triggers' trig_tac
               else (Message.print (Message.concat 
                 (Message.of_string "Automaticaly applied ") (Message.of_string message));
@@ -324,7 +331,9 @@ Ltac2 orchestrator () :=
                   run tac
                 else run_list (List.map (fun x => constr_quoted_to_constr x) l) tac ;
             Control.enter (fun () => trigger' init_triggers init_triggers ((message, l)::trig_tac)))
-          | None => trigger' init_triggers triggers' trig_tac
+          | None => 
+(*              let triggers'' := List.remove (fun x y => third_arg_equal x y String.equal) (tac, trig, message) init_triggers in *)
+             trigger' init_triggers triggers' trig_tac
         end
     end
   in
@@ -339,8 +348,7 @@ Goal (forall (A B C D : Prop), A -> B -> C -> D -> (A /\ B /\ C /\ D)).
 orchestrator. Qed.
 
 Goal (forall (A B : Prop), A \/ B -> B \/ A).
-orchestrator. Abort.
-
+orchestrator. assumption. Qed.
 
 End tests.
 
