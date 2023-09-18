@@ -11,16 +11,18 @@ destruct Hor as [HorA | HorB].
   * apply HB. assumption.
 Qed.
 
-Ltac2 or_elim (a : constr) (b : constr) := apply or_elim with (A := $a) (B := $b).
+(* Ltac2 or_elim (a : constr) (b : constr) := apply or_elim with (A := $a) (B := $b). *)
 
-Lemma test_or_elim (A B C : Prop) : A \/ B -> A \/ B \/ C.
+Ltac or_elim' A B := apply or_elim with (A := A) (B := B).
+
+(* Lemma test_or_elim (A B C : Prop) : A \/ B -> A \/ B \/ C.
 Proof.
 intros Hor.
 or_elim 'A 'B. 
   * assumption.
   * intro Ha. left. assumption.
   * intro Hb. right. left. assumption.
-Qed. 
+Qed. *) 
 
 (** Utilities **)
 
@@ -268,7 +270,7 @@ Ltac2 trigger_and_intro := TIs TGoal (TAnd TDiscard TDiscard).
 Ltac2 trigger_axiom := TIs TGoal (TVar TSomeHyp).
 Ltac2 trigger_intro := TIs TGoal (TArr TDiscard TDiscard).
 Ltac2 trigger_or_elim := TIs TSomeHyp (TOr TMetaVar TMetaVar).
-Ltac2 trigger_left := (TIs TGoal (TOr (TVar TSomeHyp) TDiscard)).
+Ltac2 trigger_left := TIs TGoal (TOr (TVar TSomeHyp) TDiscard).
 Ltac2 trigger_right := TIs TGoal (TOr TDiscard (TVar TSomeHyp)).
 
 (** Thunks **) 
@@ -282,6 +284,28 @@ match goal with
 assumption
 end).
 Ltac2 thunkintro := fun () => ltac1:(intro).
+
+Ltac2 currify (tac : Ltac1.t) (l : Ltac1.t list) :=
+  Message.print (Message.of_string "test2") ;
+  Ltac1.apply tac l Ltac1.run.
+
+Ltac2 constr_to_tacval (l : constr list) :=
+  List.map (fun x => Ltac1.of_constr x) l.
+
+(* TODO Zulip *)
+
+Goal True -> True.
+Ltac1.run (Ltac1.of_ident (@intros)).
+Ltac1.apply (Ltac1.of_ident (@intros)) [] Ltac1.run.
+
+Lemma or_elim2 (A B C : Prop) : A \/ B -> (A -> C) -> (B -> C) -> C.
+Proof.
+intros.
+let x := (Ltac1.of_ident @or_elim') in Message.print (Message.of_string "test");
+currify x (constr_to_tacval ['A; 'B]). 
+
+
+
 Ltac2 thunkorelim (l : constr list) := 
   match l with
     | [] => fail "no arguments"
@@ -299,6 +323,26 @@ Ltac2 trigs () :=
   (WithArgs thunkorelim, trigger_or_elim, "or_elim");
   (NoArg thunkleft, trigger_left, "left");
   (NoArg thunkright, trigger_right, "right")].
+
+Print Ltac2 trigs.
+
+Record poly := mk {A : Type; e : A}.
+
+Ltac titi := constr:(mk (unit -> unit -> True) ltac:(split)).
+Set Default Proof Mode "Classic".
+
+Goal True /\ True.
+let x:= titi in idtac x.
+match titi with
+| {|A:= ?t ; e:= ltac:(t') |} => idtac t'
+end.
+
+
+Ltac2 tactics () := '(mk (unit -> unit) ltac2:(thunksplit)).
+(*Ltac2 tactics () := ['(mk (unit -> unit) ltac2:(thunksplit));
+                     '(mk (list Ltac2.constr -> unit) ltac2:(thunkorelim))].*)
+
+Ltac2 toto := let (_, t) := constr:(tactics ()) in t ().
 
 Ltac2 run (thunk : Thunk) := 
   match thunk with
@@ -338,6 +382,17 @@ Ltac2 orchestrator () :=
     end
   in
   trigger' (trigs ()) (trigs ()) triggered_tactics.
+
+(* Tactics with no arguments : 
+
+- either their trigger is not valid after they are called (ex : trakt)
+- or the tactic has some fuel (can be applied only a finite number of times)
+- or they do not make any progress
+
+*)
+
+(* TODO : optimization + refinement of types of tactics (their action 
+on the goal, the hypotheses etc.) + add trakt in it *)
 
 Tactic Notation "orchestrator" := ltac2:(orchestrator ()).
 
