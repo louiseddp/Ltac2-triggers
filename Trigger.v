@@ -292,7 +292,11 @@ currify tac (constr_to_tacval l).
 
 (** Thunks **) 
 
-(* Ltac2 Type Thunk := [ NoArg (unit-> unit) | WithArgs (constr list -> unit)]. *)
+Ltac2 Type Thunk := 
+[ ChangesGoal (constr list -> unit)
+| ChangesHyp (constr list  -> unit)
+| ChangesAll (constr list -> unit)
+| ProducesHyp (constr list -> unit)]. 
 
 Ltac2 thunksplit := fun l => apply_ltac1 ltac1val:(split) l.
 Ltac2 thunkassumption := fun l => apply_ltac1 ltac1val:(assumption) l.
@@ -371,7 +375,6 @@ on the goal, the hypotheses etc.) + add trakt in it *)
 Tactic Notation "orchestrator" := ltac2:(orchestrator ()).
 
 Section tests.
-Set Default Proof Mode "Classic".
 
 Goal (forall (A B C D : Prop), A -> B -> C -> D -> (A /\ B /\ C /\ D)).
 orchestrator. Qed.
