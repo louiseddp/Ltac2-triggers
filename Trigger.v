@@ -292,22 +292,22 @@ currify tac (constr_to_tacval l).
 
 (** Thunks **) 
 
-Ltac2 Type Thunk := [ NoArg (unit-> unit) | WithArgs (constr list -> unit)].
+(* Ltac2 Type Thunk := [ NoArg (unit-> unit) | WithArgs (constr list -> unit)]. *)
 
-Ltac2 thunksplit := fun () => apply_ltac1 ltac1val:(split) [].
-Ltac2 thunkassumption := fun () => apply_ltac1 ltac1val:(assumption) [].
-Ltac2 thunkintro := fun () => apply_ltac1 ltac1val:(intro) [].
-Ltac2 thunkorelim (l : constr list) := apply_ltac1 ltac1val:(or_elim') l.
-Ltac2 thunkleft := fun () => apply_ltac1 ltac1val:(left) [].
-Ltac2 thunkright := fun () => apply_ltac1 ltac1val:(right) [].
+Ltac2 thunksplit := fun l => apply_ltac1 ltac1val:(split) l.
+Ltac2 thunkassumption := fun l => apply_ltac1 ltac1val:(assumption) l.
+Ltac2 thunkintro := fun l => apply_ltac1 ltac1val:(intro) l.
+Ltac2 thunkorelim := fun l => apply_ltac1 ltac1val:(or_elim') l.
+Ltac2 thunkleft := fun l => apply_ltac1 ltac1val:(left) l.
+Ltac2 thunkright := fun l => apply_ltac1 ltac1val:(right) l.
 
 Ltac2 trigs () :=
-  [(NoArg thunksplit, trigger_and_intro, "split"); 
-   (NoArg thunkintro, trigger_intro, "intro");
-  (NoArg thunkassumption, trigger_axiom, "assumption");
-  (WithArgs thunkorelim, trigger_or_elim, "or_elim");
-  (NoArg thunkleft, trigger_left, "left");
-  (NoArg thunkright, trigger_right, "right")].
+  [(thunksplit, trigger_and_intro, "split"); 
+   (thunkintro, trigger_intro, "intro");
+  (thunkassumption, trigger_axiom, "assumption");
+  (thunkorelim, trigger_or_elim, "or_elim");
+  (thunkleft, trigger_left, "left");
+  (thunkright, trigger_right, "right")].
 
 Print Ltac2 trigs.
 
@@ -329,17 +329,8 @@ Ltac2 tactics () := ['(mk (unit -> unit) ltac2:(thunksplit));
 
 Ltac2 toto := let (_, t) := constr:(tactics ()) in t (). *)
 
-Ltac2 run (thunk : Thunk) := 
-  match thunk with
-    | NoArg t => t ()
-    | WithArgs _ => fail "does not run a thunk which takes arguments"
-  end.
-
-Ltac2 run_list (l: constr list) (thunk : Thunk) :=
-  match thunk with
-    | NoArg _ => fail "does not run a thunk with no arguments"
-    | WithArgs t => t l
-  end.
+Ltac2 run (t : constr list -> unit) (l : constr list) := 
+t l.
 
 
 Ltac2 orchestrator () :=
@@ -356,8 +347,8 @@ Ltac2 orchestrator () :=
               else (Message.print (Message.concat 
                 (Message.of_string "Automaticaly applied ") (Message.of_string message));
                 if (Int.equal (List.length l) 0) then (* the tactic takes zero arguments *)
-                  run tac
-                else run_list (List.map (fun x => constr_quoted_to_constr x) l) tac ;
+                  run tac []
+                else run tac (List.map (fun x => constr_quoted_to_constr x) l) ;
             Control.enter (fun () => trigger' init_triggers init_triggers ((message, l)::trig_tac)))
           | None => 
              trigger' init_triggers triggers' trig_tac
