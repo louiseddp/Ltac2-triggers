@@ -1,5 +1,6 @@
 From Ltac2 Require Import Ltac2.
 From Ltac2 Require Import Constr.
+Set Default Proof Mode "Classic".
 
 (** Or elim **)
 
@@ -11,18 +12,18 @@ destruct Hor as [HorA | HorB].
   * apply HB. assumption.
 Qed.
 
-(* Ltac2 or_elim (a : constr) (b : constr) := apply or_elim with (A := $a) (B := $b). *)
+Ltac2 or_elim (a : constr) (b : constr) := apply or_elim with (A := $a) (B := $b).
 
 Ltac or_elim' A B := apply or_elim with (A := A) (B := B).
 
-(* Lemma test_or_elim (A B C : Prop) : A \/ B -> A \/ B \/ C.
+Lemma test_or_elim (A B C : Prop) : A \/ B -> A \/ B \/ C.
 Proof.
 intros Hor.
-or_elim 'A 'B. 
+or_elim' A B. 
   * assumption.
   * intro Ha. left. assumption.
   * intro Hb. right. left. assumption.
-Qed. *) 
+Qed.
 
 (** Utilities **)
 
@@ -273,48 +274,32 @@ Ltac2 trigger_or_elim := TIs TSomeHyp (TOr TMetaVar TMetaVar).
 Ltac2 trigger_left := TIs TGoal (TOr (TVar TSomeHyp) TDiscard).
 Ltac2 trigger_right := TIs TGoal (TOr TDiscard (TVar TSomeHyp)).
 
-(** Thunks **) 
-
-Ltac2 Type Thunk := [ NoArg (unit-> unit) | WithArgs (constr list -> unit)].
-
-Ltac2 thunksplit := fun () => ltac1:(split).
-Ltac2 thunkassumption := fun () => ltac1:(
-match goal with
-| |- ?G => idtac G;
-assumption
-end).
-Ltac2 thunkintro := fun () => ltac1:(intro).
+(** Reification of Ltac1 tactics **)
 
 Ltac2 currify (tac : Ltac1.t) (l : Ltac1.t list) :=
-  Message.print (Message.of_string "test2") ;
   Ltac1.apply tac l Ltac1.run.
 
 Ltac2 constr_to_tacval (l : constr list) :=
   List.map (fun x => Ltac1.of_constr x) l.
 
-(* TODO Zulip *)
-
-Goal True -> True.
-Ltac1.run (Ltac1.of_ident (@intros)).
-Ltac1.apply (Ltac1.of_ident (@intros)) [] Ltac1.run.
-
 Lemma or_elim2 (A B C : Prop) : A \/ B -> (A -> C) -> (B -> C) -> C.
 Proof.
 intros.
-let x := (Ltac1.of_ident @or_elim') in Message.print (Message.of_string "test");
-currify x (constr_to_tacval ['A; 'B]). 
+ltac2:(currify ltac1val:(or_elim') (constr_to_tacval ['A; 'B])). Abort.
 
+Ltac2 apply_ltac1 (tac : Ltac1.t) (l : constr list) := 
+currify tac (constr_to_tacval l).
 
+(** Thunks **) 
 
-Ltac2 thunkorelim (l : constr list) := 
-  match l with
-    | [] => fail "no arguments"
-    | [x] => fail "only one argument"
-    | [x; y] => or_elim x y
-    | _ => fail "too many arguments"
-  end.
-Ltac2 thunkleft := fun () => ltac1:(left).
-Ltac2 thunkright := fun () => ltac1:(right).
+Ltac2 Type Thunk := [ NoArg (unit-> unit) | WithArgs (constr list -> unit)].
+
+Ltac2 thunksplit := fun () => apply_ltac1 ltac1val:(split) [].
+Ltac2 thunkassumption := fun () => apply_ltac1 ltac1val:(assumption) [].
+Ltac2 thunkintro := fun () => apply_ltac1 ltac1val:(intro) [].
+Ltac2 thunkorelim (l : constr list) := apply_ltac1 ltac1val:(or_elim') l.
+Ltac2 thunkleft := fun () => apply_ltac1 ltac1val:(left) [].
+Ltac2 thunkright := fun () => apply_ltac1 ltac1val:(right) [].
 
 Ltac2 trigs () :=
   [(NoArg thunksplit, trigger_and_intro, "split"); 
@@ -326,7 +311,7 @@ Ltac2 trigs () :=
 
 Print Ltac2 trigs.
 
-Record poly := mk {A : Type; e : A}.
+(* Record poly := mk {A : Type; e : A}.
 
 Ltac titi := constr:(mk (unit -> unit -> True) ltac:(split)).
 Set Default Proof Mode "Classic".
@@ -339,10 +324,10 @@ end.
 
 
 Ltac2 tactics () := '(mk (unit -> unit) ltac2:(thunksplit)).
-(*Ltac2 tactics () := ['(mk (unit -> unit) ltac2:(thunksplit));
-                     '(mk (list Ltac2.constr -> unit) ltac2:(thunkorelim))].*)
+Ltac2 tactics () := ['(mk (unit -> unit) ltac2:(thunksplit));
+                     '(mk (list Ltac2.constr -> unit) ltac2:(thunkorelim))].
 
-Ltac2 toto := let (_, t) := constr:(tactics ()) in t ().
+Ltac2 toto := let (_, t) := constr:(tactics ()) in t (). *)
 
 Ltac2 run (thunk : Thunk) := 
   match thunk with
@@ -367,7 +352,6 @@ Ltac2 orchestrator () :=
               if Bool.and (Bool.neg (Int.equal (List.length l) 0)) (List.mem trigger_tac_equal (message, l) trig_tac) then 
                 Message.print (Message.concat 
                 (Message.of_string message) (Message.of_string " was already applied"));
-(*                 let triggers'' := List.remove (fun x y => third_arg_equal x y String.equal) (tac, trig, message) init_triggers in  *)
                 trigger' init_triggers triggers' trig_tac
               else (Message.print (Message.concat 
                 (Message.of_string "Automaticaly applied ") (Message.of_string message));
@@ -376,7 +360,6 @@ Ltac2 orchestrator () :=
                 else run_list (List.map (fun x => constr_quoted_to_constr x) l) tac ;
             Control.enter (fun () => trigger' init_triggers init_triggers ((message, l)::trig_tac)))
           | None => 
-(*              let triggers'' := List.remove (fun x y => third_arg_equal x y String.equal) (tac, trig, message) init_triggers in *)
              trigger' init_triggers triggers' trig_tac
         end
     end
