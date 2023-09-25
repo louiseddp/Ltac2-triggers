@@ -2,9 +2,9 @@ Require Import Trigger.
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 
-Ltac elim_trivial_hyp :=
+Ltac elim_nat :=
   match goal with
-    | H : True |- _ => clear H
+    | H : nat |- _ => clear H
   end.
 
 (** Triggers for tactics **)
@@ -18,7 +18,7 @@ Ltac2 trigger_left := TIs TGoal (TOr (TVar TSomeHyp) TDiscard).
 Ltac2 trigger_right := TIs TGoal (TOr TDiscard (TVar TSomeHyp)).
 
 (** warning : thunk because constrs are only produced at RUNTIME *)
-Ltac2 trigger_elim_trivial_hyps () := TIs TSomeHyp (TType 'True).
+Ltac2 trigger_elim_nat () := TIs TSomeHyp (TType 'Set).
 
 (** Not really expressible **)
 Ltac2 trigger_apply_in := TIs TSomeHyp (TArr (TVar TSomeHyp) TDiscard).
@@ -55,12 +55,12 @@ Ltac2 thunkintro := fun l => apply_ltac1 ltac1val:(intro) l.
 Ltac2 thunkorelim := fun l => apply_ltac1 ltac1val:(or_elim') l.
 Ltac2 thunkleft := fun l => apply_ltac1 ltac1val:(left) l.
 Ltac2 thunkright := fun l => apply_ltac1 ltac1val:(right) l.
-Ltac2 thunkelimtrivial := fun l => apply_ltac1 ltac1val:(elim_trivial_hyp) l.
+Ltac2 thunkelimnat := fun l => apply_ltac1 ltac1val:(elim_nat) l.
 
 Ltac2 trigs () :=
   [(thunksplit, trigger_and_intro, "split"); 
    (thunkintro, trigger_intro, "intro");
-  (thunkelimtrivial, trigger_elim_trivial_hyps (), "elim_trivial_hyps");
+  (thunkelimnat, trigger_elim_nat (), "elim_nat");
   (thunkassumption, trigger_axiom, "assumption");
   (thunkorelim, trigger_or_elim, "or_elim");
   (thunkleft, trigger_left, "left");
@@ -113,7 +113,7 @@ Tactic Notation "orchestrator" := ltac2:(orchestrator ()).
 
 Section tests.
 
-Goal (forall (A B C D : Prop), True -> A -> B -> C -> D -> (A /\ B /\ C /\ D)).
+Goal (forall (A B C D : Prop), nat -> A -> B -> C -> D -> (A /\ B /\ C /\ D)).
 orchestrator. Qed.
 
 Goal (forall (A B : Prop), A \/ B -> B \/ A).
