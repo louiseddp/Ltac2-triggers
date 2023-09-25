@@ -1,0 +1,4 @@
+-R . Ltac2_triggers
+
+Trigger.v
+Thunks.v
