@@ -9,16 +9,18 @@ Ltac2 Type trigger_var :=
   [TGoal | TSomeHyp].
 
 Ltac2 Type rec trigger_form := [
-  | TType (constr)
-  | TTerm (constr)
-  | TVar (trigger_var)
+  | TType (constr, bool)
+  | TTerm (constr, bool)
+  | TVar (trigger_var, bool)
   | TArr (trigger_form, trigger_form)
   | TAnd (trigger_form, trigger_form)
   | TOr (trigger_form, trigger_form)
-  | TTop
-  | TBottom
-  | TDiscard
-  | TMetaVar ].
+  | TAny (bool) ].
+
+Ltac2 tMetavar := TAny true.
+Ltac2 tDiscard := TAny false.
+
+(* Notation "<% x %>" := ltac2:(let x := Ltac2.Constr.pretype x in TTerm x false).  *)
 
 Ltac2 Type rec trigger := [
   | TIs (trigger_var, trigger_form) 
@@ -34,20 +36,30 @@ Ltac2 Type rec trigger := [
 Ltac2 interpret_trigger_var (tv : trigger_var) :=
   match tv with
     | TSomeHyp => let h := Control.hyps () in 
-        type_of_hyps h
+        (type_of_hyps h)
     | TGoal => let g := Control.goal () in [g]
   end.
 
 Ltac2 rec interpret_constr_with_trigger_form 
   (c : constr_quoted) (tf : trigger_form) :=
   match c, tf with
-    | Top, TTop => Some [] 
-    | Bottom, TBottom => Some []
-    | Term c, TTerm c' => if equal c c' then Some [] else None
-    | Term c, TType t => if equal (Constr.type c) t then Some [] else None 
-    | Term c, TVar v => 
+    | Term c, TTerm c' b => 
+      if equal c c' then 
+        if b then Some [c']
+        else Some [] 
+      else None
+    | Term c, TType t b => 
+        if equal (Constr.type c) t then
+          if b then Some [t]
+          else Some []  
+        else None 
+    | Term c, TVar v b => 
        let tv := interpret_trigger_var v in
-       if List.mem equal c tv then Some [] else None
+       if List.mem equal c tv then 
+        if b then Some tv
+        else Some [] 
+       else None
+    | _, TAny b => if b then Some [constr_quoted_to_constr c] else Some []
     | Arrow c1 c2, TArr tf1 tf2 => 
       let o1 := interpret_constr_with_trigger_form c1 tf1 in
       let o2 := interpret_constr_with_trigger_form c2 tf2 in
@@ -69,8 +81,6 @@ Ltac2 rec interpret_constr_with_trigger_form
           | Some l1, Some l2 => Some (List.append l1 l2)
           | _ => None
         end
-    | _, TMetaVar => Some [c]
-    | _, TDiscard => Some []
     | _ => None
   end. 
 
@@ -127,14 +137,3 @@ Ltac2 rec interpret_trigger (t : trigger) :=
           end
       end
   end.
-
-(* The name of the tactic triggered + on which hypothesis it should be triggered *)
-Ltac2 (* mutable *) triggered_tactics : (string*(constr_quoted list)) list := [].
-
-Ltac2 trigger_tac_equal (x: string*(constr_quoted list)) (y: string*(constr_quoted list)) :=
-  match x, y with
-    | (s1, l1), (s2, l2) => Bool.and (String.equal s1 s2) (List.equal (fun x y =>
-      let x' := constr_quoted_to_constr x in
-      let y' := constr_quoted_to_constr y in 
-      equal x' y') l1 l2)
-  end. 

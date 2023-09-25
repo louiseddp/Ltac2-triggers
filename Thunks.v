@@ -10,19 +10,18 @@ Ltac elim_nat :=
 
 (** Triggers for tactics **)
 
-
-Ltac2 trigger_and_intro := TIs TGoal (TAnd TDiscard TDiscard).
-Ltac2 trigger_axiom := TIs TGoal (TVar TSomeHyp).
-Ltac2 trigger_intro := TIs TGoal (TArr TDiscard TDiscard).
-Ltac2 trigger_or_elim := TIs TSomeHyp (TOr TMetaVar TMetaVar).
-Ltac2 trigger_left := TIs TGoal (TOr (TVar TSomeHyp) TDiscard).
-Ltac2 trigger_right := TIs TGoal (TOr TDiscard (TVar TSomeHyp)).
+Ltac2 trigger_and_intro := TIs TGoal (TAnd tDiscard tDiscard).
+Ltac2 trigger_axiom := TIs TGoal (TVar TSomeHyp false).
+Ltac2 trigger_intro := TIs TGoal (TArr (TAny false) (TAny false)).
+Ltac2 trigger_or_elim := TIs TSomeHyp (TOr tMetavar tMetavar).
+Ltac2 trigger_left := TIs TGoal (TOr (TVar TSomeHyp false) tDiscard).
+Ltac2 trigger_right := TIs TGoal (TOr tDiscard (TVar TSomeHyp false)).
 
 (** warning : thunk because constrs are only produced at RUNTIME *)
-Ltac2 trigger_elim_nat () := TIs TSomeHyp (TType 'Set).
+Ltac2 trigger_elim_nat () := TIs TSomeHyp (TType 'Set false).
 
 (** Not really expressible **)
-Ltac2 trigger_apply_in := TIs TSomeHyp (TArr (TVar TSomeHyp) TDiscard).
+Ltac2 trigger_apply_in := TIs TSomeHyp (TArr (TVar TSomeHyp false) tDiscard).
 
 
 
@@ -73,6 +72,15 @@ Ltac2 run (t : constr list -> unit) (l : constr list) :=
 t l.
 
 
+(* The name of the tactic triggered + on which hypothesis it should be triggered *)
+Ltac2 (* mutable *) triggered_tactics : (string*(constr list)) list := [].
+
+Ltac2 trigger_tac_equal (x: string*(constr list)) (y: string*(constr list)) :=
+  match x, y with
+    | (s1, l1), (s2, l2) => Bool.and (String.equal s1 s2) (List.equal Constr.equal l1 l2)
+  end. 
+
+
 Ltac2 orchestrator () :=
   let rec trigger' init_triggers t trig_tac :=
     match t with
@@ -88,7 +96,7 @@ Ltac2 orchestrator () :=
                 (Message.of_string "Automaticaly applied ") (Message.of_string message));
                 if (Int.equal (List.length l) 0) then (* the tactic takes zero arguments *)
                   run tac []
-                else run tac (List.map (fun x => constr_quoted_to_constr x) l) ;
+                else run tac l ;
             Control.enter (fun () => trigger' init_triggers init_triggers ((message, l)::trig_tac)))
           | None => 
              (Message.print (Message.concat 
