@@ -5,13 +5,16 @@ Set Default Proof Mode "Classic".
 
 (** Triggers **)
 
+Ltac2 Type flag_arg :=
+  [ FType | FTerm | FNothing].
+
 Ltac2 Type trigger_var := 
   [TGoal | TSomeHyp].
 
 Ltac2 Type rec trigger_form := [
   | TType (constr, bool)
   | TTerm (constr, bool)
-  | TVar (trigger_var, bool)
+  | TVar (trigger_var, flag_arg)
   | TArr (trigger_form, trigger_form)
   | TAnd (trigger_form, trigger_form)
   | TOr (trigger_form, trigger_form)
@@ -53,11 +56,14 @@ Ltac2 rec interpret_constr_with_trigger_form
           if b then Some [t]
           else Some []  
         else None 
-    | Term c, TVar v b => 
+    | Term c, TVar v fl => 
        let tv := interpret_trigger_var v in
        if List.mem equal c tv then 
-        if b then Some tv
-        else Some [] 
+         match fl with
+          | FNothing => Some []
+          | FType => Some tv
+          | FTerm => Some [get_hyp c]
+         end
        else None
     | _, TAny b => if b then Some [constr_quoted_to_constr c] else Some []
     | Arrow c1 c2, TArr tf1 tf2 => 

@@ -11,17 +11,17 @@ Ltac elim_nat :=
 (** Triggers for tactics **)
 
 Ltac2 trigger_and_intro := TIs TGoal (TAnd tDiscard tDiscard).
-Ltac2 trigger_axiom := TIs TGoal (TVar TSomeHyp false).
+Ltac2 trigger_axiom := TIs TGoal (TVar TSomeHyp FNothing).
 Ltac2 trigger_intro := TIs TGoal (TArr (TAny false) (TAny false)).
 Ltac2 trigger_or_elim := TIs TSomeHyp (TOr tMetavar tMetavar).
-Ltac2 trigger_left := TIs TGoal (TOr (TVar TSomeHyp false) tDiscard).
-Ltac2 trigger_right := TIs TGoal (TOr tDiscard (TVar TSomeHyp false)).
+Ltac2 trigger_left := TIs TGoal (TOr (TVar TSomeHyp FNothing) tDiscard).
+Ltac2 trigger_right := TIs TGoal (TOr tDiscard (TVar TSomeHyp FNothing)).
 
 (** warning : thunk because constrs are only produced at RUNTIME *)
 Ltac2 trigger_elim_nat () := TIs TSomeHyp (TType 'Set false).
 
 (** Not really expressible **)
-Ltac2 trigger_apply_in := TIs TSomeHyp (TArr (TVar TSomeHyp false) tDiscard).
+Ltac2 trigger_apply_in := TIs TSomeHyp (TArr (TVar TSomeHyp FTerm) tDiscard).
 
 
 

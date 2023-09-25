@@ -33,13 +33,25 @@ Ltac2 third_arg_equal (x : 'a*'b*'c) (y : 'a*'b*'c) (eq : 'c -> 'c -> bool) :=
     | (_, _, u1), (_, _, u2) => eq u1 u2
   end.
 
+
+Ltac2 fail s := Control.backtrack_tactic_failure s.
+
 Ltac2 rec type_of_hyps (l : (ident * constr option * constr) list) :=
   match l with
     | [] => []
     | (id, opt, ty) :: xs => ty :: type_of_hyps xs
   end.
 
-Ltac2 fail s := Control.backtrack_tactic_failure s.
+Ltac2 get_hyp (c : constr) :=
+  let h := Control.hyps () in
+  let rec tac_aux c h := 
+  match h with
+    | [] => fail "not found"
+    | (id, opt, ty) :: xs => 
+        let h' := Control.hyp id in 
+        if Constr.equal c (Constr.type h') then h' 
+        else tac_aux c xs
+  end in tac_aux c h.
 
 Ltac2 rec flatten_option_list (l : 'a list) :=
   match l with
