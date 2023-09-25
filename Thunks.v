@@ -2,6 +2,45 @@ Require Import Trigger.
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 
+Ltac elim_trivial_hyp :=
+  match goal with
+    | H : True |- _ => clear H
+  end.
+
+(** Triggers for tactics **)
+
+
+Ltac2 trigger_and_intro := TIs TGoal (TAnd TDiscard TDiscard).
+Ltac2 trigger_axiom := TIs TGoal (TVar TSomeHyp).
+Ltac2 trigger_intro := TIs TGoal (TArr TDiscard TDiscard).
+Ltac2 trigger_or_elim := TIs TSomeHyp (TOr TMetaVar TMetaVar).
+Ltac2 trigger_left := TIs TGoal (TOr (TVar TSomeHyp) TDiscard).
+Ltac2 trigger_right := TIs TGoal (TOr TDiscard (TVar TSomeHyp)).
+
+(** warning : thunk because constrs are only produced at RUNTIME *)
+Ltac2 trigger_elim_trivial_hyps () := TIs TSomeHyp (TType 'True).
+
+(** Not really expressible **)
+Ltac2 trigger_apply_in := TIs TSomeHyp (TArr (TVar TSomeHyp) TDiscard).
+
+
+
+(** Reification of Ltac1 tactics **)
+
+Ltac2 currify (tac : Ltac1.t) (l : Ltac1.t list) :=
+  Ltac1.apply tac l Ltac1.run.
+
+Ltac2 constr_to_tacval (l : constr list) :=
+  List.map (fun x => Ltac1.of_constr x) l.
+
+Lemma or_elim2 (A B C : Prop) : A \/ B -> (A -> C) -> (B -> C) -> C.
+Proof.
+intros.
+ltac2:(currify ltac1val:(or_elim') (constr_to_tacval ['A; 'B])). Abort.
+
+Ltac2 apply_ltac1 (tac : Ltac1.t) (l : constr list) := 
+currify tac (constr_to_tacval l).
+
 (** Thunks **) 
 
 Ltac2 Type Thunk := 
@@ -16,34 +55,18 @@ Ltac2 thunkintro := fun l => apply_ltac1 ltac1val:(intro) l.
 Ltac2 thunkorelim := fun l => apply_ltac1 ltac1val:(or_elim') l.
 Ltac2 thunkleft := fun l => apply_ltac1 ltac1val:(left) l.
 Ltac2 thunkright := fun l => apply_ltac1 ltac1val:(right) l.
+Ltac2 thunkelimtrivial := fun l => apply_ltac1 ltac1val:(elim_trivial_hyp) l.
 
 Ltac2 trigs () :=
   [(thunksplit, trigger_and_intro, "split"); 
    (thunkintro, trigger_intro, "intro");
+  (thunkelimtrivial, trigger_elim_trivial_hyps (), "elim_trivial_hyps");
   (thunkassumption, trigger_axiom, "assumption");
   (thunkorelim, trigger_or_elim, "or_elim");
   (thunkleft, trigger_left, "left");
   (thunkright, trigger_right, "right")].
 
 Print Ltac2 trigs.
-
-(* Record poly := mk {A : Type; e : A}.
-
-Ltac titi := constr:(mk (unit -> unit -> True) ltac:(split)).
-Set Default Proof Mode "Classic".
-
-Goal True /\ True.
-let x:= titi in idtac x.
-match titi with
-| {|A:= ?t ; e:= ltac:(t') |} => idtac t'
-end.
-
-
-Ltac2 tactics () := '(mk (unit -> unit) ltac2:(thunksplit)).
-Ltac2 tactics () := ['(mk (unit -> unit) ltac2:(thunksplit));
-                     '(mk (list Ltac2.constr -> unit) ltac2:(thunkorelim))].
-
-Ltac2 toto := let (_, t) := constr:(tactics ()) in t (). *)
 
 Ltac2 run (t : constr list -> unit) (l : constr list) := 
 t l.
@@ -67,6 +90,8 @@ Ltac2 orchestrator () :=
                 else run tac (List.map (fun x => constr_quoted_to_constr x) l) ;
             Control.enter (fun () => trigger' init_triggers init_triggers ((message, l)::trig_tac)))
           | None => 
+             (Message.print (Message.concat 
+             (Message.of_string "The following tactic was not triggered: ") (Message.of_string message)));
              trigger' init_triggers triggers' trig_tac
         end
     end
@@ -88,7 +113,7 @@ Tactic Notation "orchestrator" := ltac2:(orchestrator ()).
 
 Section tests.
 
-Goal (forall (A B C D : Prop), A -> B -> C -> D -> (A /\ B /\ C /\ D)).
+Goal (forall (A B C D : Prop), True -> A -> B -> C -> D -> (A /\ B /\ C /\ D)).
 orchestrator. Qed.
 
 Goal (forall (A B : Prop), A \/ B -> B \/ A).

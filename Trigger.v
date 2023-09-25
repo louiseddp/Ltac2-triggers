@@ -137,6 +137,7 @@ Ltac2 Type trigger_var :=
   [TGoal | TSomeHyp].
 
 Ltac2 Type rec trigger_form := [
+  | TType (constr)
   | TTerm (constr)
   | TVar (trigger_var)
   | TArr (trigger_form, trigger_form)
@@ -171,6 +172,7 @@ Ltac2 rec interpret_constr_with_trigger_form
     | Top, TTop => Some [] 
     | Bottom, TBottom => Some []
     | Term c, TTerm c' => if equal c c' then Some [] else None
+    | Term c, TType t => if equal (Constr.type c) t then Some [] else None 
     | Term c, TVar v => 
        let tv := interpret_trigger_var v in
        if List.mem equal c tv then Some [] else None
@@ -264,28 +266,3 @@ Ltac2 trigger_tac_equal (x: string*(constr_quoted list)) (y: string*(constr_quot
       let y' := constr_quoted_to_constr y in 
       equal x' y') l1 l2)
   end. 
-
-(** Triggers for tactics **)
-
-Ltac2 trigger_and_intro := TIs TGoal (TAnd TDiscard TDiscard).
-Ltac2 trigger_axiom := TIs TGoal (TVar TSomeHyp).
-Ltac2 trigger_intro := TIs TGoal (TArr TDiscard TDiscard).
-Ltac2 trigger_or_elim := TIs TSomeHyp (TOr TMetaVar TMetaVar).
-Ltac2 trigger_left := TIs TGoal (TOr (TVar TSomeHyp) TDiscard).
-Ltac2 trigger_right := TIs TGoal (TOr TDiscard (TVar TSomeHyp)).
-
-(** Reification of Ltac1 tactics **)
-
-Ltac2 currify (tac : Ltac1.t) (l : Ltac1.t list) :=
-  Ltac1.apply tac l Ltac1.run.
-
-Ltac2 constr_to_tacval (l : constr list) :=
-  List.map (fun x => Ltac1.of_constr x) l.
-
-Lemma or_elim2 (A B C : Prop) : A \/ B -> (A -> C) -> (B -> C) -> C.
-Proof.
-intros.
-ltac2:(currify ltac1val:(or_elim') (constr_to_tacval ['A; 'B])). Abort.
-
-Ltac2 apply_ltac1 (tac : Ltac1.t) (l : constr list) := 
-currify tac (constr_to_tacval l).
