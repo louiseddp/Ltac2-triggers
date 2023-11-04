@@ -35,7 +35,7 @@ Fixpoint Inb (h: list bool) (hs: list (list bool)) : bool :=
   end.
 
 Definition same_length {A : Type} (l1 l2: list A) :=
-Nat.eqb (length l1) (length l2). Print forallb.
+Nat.eqb (length l1) (length l2).
 
 Record CoqGoal := mkCoqGoal 
 { Hs : hyps ;
@@ -44,6 +44,39 @@ samelength : forallb (same_length G) Hs = true }.
 
 Definition transfo := (SimplifiedTriggers*Alterations)%type.
 
+Record input := mkInput 
+{ Transfos: list transfo ;
+  CG: CoqGoal ;
+  inv: length (G CG) = length Transfos  }.
+
+(* The hypothesis (or the goal) has been seen by
+the nth-transformation *)
+
+Fixpoint seen_n (n: nat) (l: list bool) :=
+  match n with
+    | 0 => 
+      match l with
+        | [] => []
+        | x :: xs => true :: xs
+      end
+    | S n' => 
+      match l with
+        | [] => []
+        | x :: xs => x :: seen_n n' xs
+      end
+  end.
+
+Fixpoint seen_n_list (n: nat) (l: list (list bool)) :=
+  match l with
+    | [] => []
+    | x :: xs => 
+      if Bool.eqb (nth n x true) false 
+      then seen_n n x :: xs
+      else x :: seen_n_list n xs
+    end.
+
+(* Compute seen_n_list 2 [[true; true; true]; [true; false; true]; [true; false; false]]. *)
+        
 (* A new hypothesis has not been "seen" by 
 any of the n transformations *) 
 
@@ -55,6 +88,50 @@ Fixpoint NewHyp (n: nat) :=
 
 Definition ResetFalse (l: list bool) :=
   List.map (fun _ => false) l.
+
+Definition SeenHyp (n: nat) (l: list bool) := Bool.eqb (nth n l false) true.
+
+Definition SeenHyps (n: nat) (l: list (list bool)) :=
+forallb (SeenHyp n) l.
+
+Axiom TODO : forall (A : Type), A.
+
+(* Definition of the check_trigger function: 
+the transformation n will check if it can be applied to
+either one hypothesis (the first non-marked as "seen") 
+if it is triggered by hyps, 
+or the goal, and it will mark the corresponding hyp or goal 
+as "seen" *)
+
+
+Definition check_trigger (tr: transfo) (n: nat) (cg: CoqGoal) :=
+  match tr.1 with
+    | GoalSensitive => 
+      {| Hs := Hs cg;
+         G := seen_n n (G cg);
+         samelength := (TODO _)
+      |}
+    | HypsSensitive => 
+      {| Hs := seen_n_list n (Hs cg);
+         G := G cg;
+         samelength := (TODO _)
+      |}
+    | AllSensitive => 
+      if SeenHyps n (Hs cg) then
+      {| Hs := Hs cg;
+         G := seen_n n (G cg);
+         samelength := (TODO _)
+      |}
+      else 
+      {| Hs := seen_n_list n (Hs cg);
+         G := G cg;
+         samelength := (TODO _)
+      |}
+  end.
+
+(* Definition of the apply function: 
+the transformation applies its effect 
+according to the constructor from the Alterations enumeration *)
 
 Lemma new_hyp_length_goal_aux (l : list bool) :
   same_length l (NewHyp (length l)) = true.
