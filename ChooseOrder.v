@@ -101,6 +101,24 @@ rewrite resetfalse_length.
 apply IHls' in H2. rewrite H2. reflexivity. assumption.
 Qed.
 
+Lemma resetfalse_length_forall2 l ls : 
+forallb (same_length l) ls = true -> 
+forallb (same_length (ResetFalse l)) ls = true.
+Proof.
+unfold same_length. rewrite resetfalse_length1. intro H.
+assumption. 
+Qed.
+
+Lemma resetfalse_length_forall3 l ls : 
+forallb (same_length l) ls = true ->
+forallb (same_length (ResetFalse l)) (List.map ResetFalse ls) = true.
+Proof.
+intros H.
+rewrite resetfalse_length_forall. reflexivity. 
+rewrite resetfalse_length_forall2. reflexivity.
+assumption.
+Qed.
+
 Definition apply (tr: transfo) (cg: CoqGoal) :=
   match tr.2 with
     | ProducesHyp => 
@@ -109,12 +127,18 @@ Definition apply (tr: transfo) (cg: CoqGoal) :=
          samelength := new_hyp_length_goal cg
       |}
     | ChangesHyps => 
-      let (hs, g) := cg in
-      (List.map ResetFalse hs, g)
+      {| Hs := List.map ResetFalse (Hs cg);
+         G := G cg;
+         samelength := resetfalse_length_forall (G cg) (Hs cg) (samelength cg)
+      |}
     | ChangesGoal =>
-      let (hs, g) := cg in
-      (hs, ResetFalse g)
+      {| Hs := Hs cg;
+         G := ResetFalse (G cg);
+         samelength := resetfalse_length_forall2 (G cg) (Hs cg) (samelength cg)
+      |}
     | ChangesAll =>
-      let (hs, g) := cg in
-      (List.map ResetFalse hs, ResetFalse g)
-  end.
+      {| Hs := List.map ResetFalse (Hs cg);
+         G := ResetFalse (G cg);
+         samelength := resetfalse_length_forall3 (G cg) (Hs cg) (samelength cg)
+      |}
+  end. 
