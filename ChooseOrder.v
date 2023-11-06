@@ -94,8 +94,6 @@ Definition SeenHyp (n: nat) (l: list bool) := Bool.eqb (nth n l false) true.
 Definition SeenHyps (n: nat) (l: list (list bool)) :=
 forallb (SeenHyp n) l.
 
-Axiom TODO : forall (A : Type), A.
-
 (* Definition of the check_trigger function: 
 the transformation n will check if it can be applied to
 either one hypothesis (the first non-marked as "seen") 
@@ -103,29 +101,84 @@ if it is triggered by hyps,
 or the goal, and it will mark the corresponding hyp or goal 
 as "seen" *)
 
+Lemma seen_n_length (n: nat) (l: list bool) :
+length (seen_n n l) = length l.
+Proof.
+generalize dependent l.
+induction n as [| n IHn].
+- destruct l ; reflexivity.
+- simpl. destruct l.
+  * reflexivity.
+  * simpl in *. rewrite IHn. reflexivity. 
+Qed.
+
+Lemma seen_n_list_length (n: nat) (lb : list bool) (l: list (list bool)) :
+forallb (same_length lb) l = true ->
+forallb (same_length lb) (seen_n_list n l) = true.
+Proof.
+generalize dependent lb.
+generalize dependent n.
+induction l as [| x l IHl] ; intros n lb H.
+- reflexivity.
+- destruct (Bool.eqb (nth n x true) false) eqn:E.
+  * simpl in *; rewrite E. destruct n.
+     + destruct x ; simpl in *.
+        { inversion E. }
+        { rewrite eqb_true_iff in E. rewrite E in H.
+apply andb_prop in H. destruct H as [H1 H2]. rewrite H2.
+unfold same_length in *. simpl in *. rewrite H1. reflexivity. }
+      + destruct x ; simpl in *.
+        { inversion E. }
+        { rewrite eqb_true_iff in E.
+apply andb_prop in H. destruct H as [H1 H2].
+rewrite H2. unfold same_length in *. simpl in *.
+rewrite seen_n_length. rewrite H1. reflexivity. }
+  * simpl in *. rewrite E.
+apply andb_prop in H. destruct H as [H1 H2].
+simpl in *. rewrite H1. simpl. apply IHl.
+assumption. 
+Qed.
+
+Lemma seen_n_length_goal (n: nat) (cg: CoqGoal):
+forallb (same_length (G cg)) (Hs cg) = true ->
+forallb (same_length (seen_n n (G cg))) (Hs cg) = true.
+Proof.
+intro H.
+unfold same_length in *.
+rewrite seen_n_length. assumption. 
+Qed. 
+
+Lemma seen_n_length_hyp (n: nat) (cg: CoqGoal):
+forallb (same_length (G cg)) (Hs cg) = true ->
+forallb (same_length (G cg)) (seen_n_list n (Hs cg)) = true.
+Proof.
+intro H. rewrite seen_n_list_length.
+- reflexivity.
+- assumption.
+Qed.
 
 Definition check_trigger (tr: transfo) (n: nat) (cg: CoqGoal) :=
   match tr.1 with
     | GoalSensitive => 
       {| Hs := Hs cg;
          G := seen_n n (G cg);
-         samelength := (TODO _)
+         samelength := seen_n_length_goal n cg (samelength cg)
       |}
     | HypsSensitive => 
       {| Hs := seen_n_list n (Hs cg);
          G := G cg;
-         samelength := (TODO _)
+         samelength := seen_n_length_hyp n cg (samelength cg)
       |}
     | AllSensitive => 
       if SeenHyps n (Hs cg) then
       {| Hs := Hs cg;
          G := seen_n n (G cg);
-         samelength := (TODO _)
+         samelength := seen_n_length_goal n cg (samelength cg)
       |}
       else 
       {| Hs := seen_n_list n (Hs cg);
          G := G cg;
-         samelength := (TODO _)
+         samelength := seen_n_length_hyp n cg (samelength cg)
       |}
   end.
 
