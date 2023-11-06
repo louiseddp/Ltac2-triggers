@@ -47,7 +47,7 @@ Definition transfo := (SimplifiedTriggers*Alterations)%type.
 Record input := mkInput 
 { Transfos: list transfo ;
   CG: CoqGoal ;
-  inv: length (G CG) = length Transfos  }.
+  inv: length (G CG) = length Transfos }.
 
 (* The hypothesis (or the goal) has been seen by
 the nth-transformation *)
@@ -93,6 +93,24 @@ Definition SeenHyp (n: nat) (l: list bool) := Bool.eqb (nth n l false) true.
 
 Definition SeenHyps (n: nat) (l: list (list bool)) :=
 forallb (SeenHyp n) l.
+
+
+(* Specification for the moment when the orchestrator
+should stop: the transformations have all been 
+applied and their trigger checked *)
+
+Definition AllTrue (l: list bool) :=
+forallb (Bool.eqb true) l.
+
+Definition AllTrueList (l: list (list bool)) :=
+forallb AllTrue l.
+
+Definition EndOrchCoqGoal (cg: CoqGoal) :=
+AllTrueList (Hs cg) && AllTrue (G cg).
+
+Definition EndOrch (inp: input) : bool :=
+EndOrchCoqGoal (CG inp).
+
 
 (* Definition of the check_trigger function: 
 the transformation n will check if it can be applied to
@@ -272,3 +290,15 @@ Definition apply (tr: transfo) (cg: CoqGoal) :=
          samelength := resetfalse_length_forall3 (G cg) (Hs cg) (samelength cg)
       |}
   end. 
+
+
+(* Prepare an input: the transformations that applies 
+only on the goal mark as "seen" all the hypotheses, 
+the transformations that applies only on the hypotheses mark 
+as "seen" the goal.
+This should be done at the begining of the computation 
+but also between each application of a transformation
+All correct inputs should verify the Prepared predicate *)
+
+
+
