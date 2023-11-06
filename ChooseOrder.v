@@ -7,19 +7,19 @@ the orchestrator should meet, and to look for a suitable order *)
 Notation "x .1" := (fst x) (at level 60).
 Notation "x .2" := (snd x) (at level 60).
 
-Definition foldi {A B: Type} (f: nat -> B -> A -> B) (l: list A) (acc: B) : B :=
-  let fix aux f l n acc :=
+Fixpoint foldi_aux {A B: Type} (f: nat -> B -> A -> B) (l: list A) (n: nat) (acc: B) : B :=
   match l with
     | [] => acc
-    | x :: xs => aux f xs (S n) (f n acc x)
-  end
-  in aux f l 0 acc.
+    | x :: xs => f n (foldi_aux f xs (S n) acc) x
+  end.
+
+Definition foldi {A B} f l acc := @foldi_aux A B f l 0 acc.
 
 Inductive SimplifiedTriggers : Set :=
-GoalSensitive | HypsSensitive | AllSensitive.
+  GoalSensitive | HypsSensitive | AllSensitive.
 
 Inductive Alterations : Set :=
-ProducesHyp | ChangesHyps | ChangesGoal | ChangesAll.
+  ProducesHyp | ChangesHyps | ChangesGoal | ChangesAll.
 
 Definition hyp := list bool.
 
@@ -322,20 +322,64 @@ Definition prepare_step (n: nat) (cg: CoqGoal) (tr: transfo) :=
       |}
   end. 
 
-Axiom FF : forall A, A.
+Axiom FF : forall A, A. 
 
 Definition prepare_steps (l: list transfo) (cg: CoqGoal) :=
 foldi prepare_step l cg.
 
+Lemma prepare_step_length n cg tr :
+length (G (prepare_step n cg tr)) = length (G cg).
+Proof.
+destruct cg as [hyps goal inv].
+destruct goal as [ | x xs] ; 
+destruct tr as (s, a); destruct s; destruct n.
+- reflexivity.
+- reflexivity.
+- reflexivity.
+- reflexivity.
+- reflexivity.
+- reflexivity.
+- reflexivity.
+- reflexivity.
+- reflexivity.
+- simpl in *. rewrite seen_n_length. reflexivity.
+- simpl in *. reflexivity.  
+- reflexivity. 
+Qed.
+
+Lemma prepare_steps_length n cg trs :
+length
+  (G (foldi_aux prepare_step trs n cg)) =
+length (G cg).
+Proof.
+generalize dependent n.
+generalize dependent cg.
+induction trs as [| tr' trs IHtrs].
+- reflexivity.
+- simpl in *. intros cg n. specialize (IHtrs cg (S n)).
+rewrite prepare_step_length. assumption.
+Qed.
+  
+
+Lemma prepare_steps_length2 cg trs:
+length (G (prepare_steps trs cg))
+= length (G cg).
+Proof.
+unfold prepare_steps in *. 
+unfold foldi. apply prepare_steps_length.
+Qed. 
+
+Lemma prepare_steps_length3 inp :
+length (G (prepare_steps (Transfos inp) (CG inp))) = length (Transfos inp).
+Proof.
+destruct inp as [trs cg inv].
+simpl. rewrite <- inv. apply prepare_steps_length2.
+Qed.
+
 Definition prepare (inp: input) : input :=
 {| Transfos := Transfos inp;
    CG := prepare_steps (Transfos inp) (CG inp) ;
-   inv := FF (length
-    (G
-       (prepare_steps (Transfos inp)
-          (CG inp))) =
-  length (Transfos inp))
+   inv := prepare_steps_length3 inp
 |}.
-
 
 
