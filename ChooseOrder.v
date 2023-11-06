@@ -180,31 +180,35 @@ Proof.
 intro H. rewrite seen_n_list_length.
 - reflexivity.
 - assumption.
-Qed.
+Qed. Print SeenHyp.
 
-Definition check_trigger (tr: transfo) (n: nat) (cg: CoqGoal) :=
+Definition check_trigger 
+(tr: transfo) 
+(n: nat) 
+(cg: CoqGoal) : option CoqGoal :=
   match tr.1 with
-    | GoalSensitive => 
-      {| Hs := Hs cg;
+    | GoalSensitive => if SeenHyp n (G cg) then None else Some
+      ({| Hs := Hs cg;
          G := seen_n n (G cg);
          samelength := seen_n_length_goal n cg (samelength cg)
-      |}
-    | HypsSensitive => 
-      {| Hs := seen_n_list n (Hs cg);
+      |})
+    | HypsSensitive => if SeenHyps n (Hs cg) then None else Some
+      ({| Hs := seen_n_list n (Hs cg);
          G := G cg;
          samelength := seen_n_length_hyp n cg (samelength cg)
-      |}
+      |})
     | AllSensitive => 
-      if SeenHyps n (Hs cg) then
-      {| Hs := Hs cg;
+      if SeenHyps n (Hs cg) then 
+      if SeenHyp n (G cg) then None else Some
+      ({| Hs := Hs cg;
          G := seen_n n (G cg);
          samelength := seen_n_length_goal n cg (samelength cg)
-      |}
-      else 
-      {| Hs := seen_n_list n (Hs cg);
+      |})
+      else Some
+      ({| Hs := seen_n_list n (Hs cg);
          G := G cg;
          samelength := seen_n_length_hyp n cg (samelength cg)
-      |}
+      |})
   end.
 
 (* Definition of the apply function: 
@@ -320,9 +324,7 @@ Definition prepare_step (n: nat) (cg: CoqGoal) (tr: transfo) :=
          G := G cg;
          samelength := seen_n_length_hyp n cg (samelength cg)
       |}
-  end. 
-
-Axiom FF : forall A, A. 
+  end.
 
 Definition prepare_steps (l: list transfo) (cg: CoqGoal) :=
 foldi prepare_step l cg.
@@ -381,5 +383,156 @@ Definition prepare (inp: input) : input :=
    CG := prepare_steps (Transfos inp) (CG inp) ;
    inv := prepare_steps_length3 inp
 |}.
+
+Lemma prepare_length inp : 
+length (Transfos (prepare inp)) = length (Transfos inp).
+Proof. reflexivity. Qed.
+
+(* One step: the input is "prepared" and 
+then we applied the first transformation triggered *)
+
+Axiom FF: forall A, A.
+
+Fixpoint first_transfo_applied_aux 
+(trs: list transfo) 
+(cg: CoqGoal) 
+(n: nat) : option (transfo*CoqGoal) :=
+  match trs with
+    | [] => None
+    | tr :: trs' => 
+      match check_trigger tr n cg with
+        | None => first_transfo_applied_aux  trs' cg (S n)
+        | Some cg' => Some (tr, cg')
+      end
+  end.
+
+Definition first_transfo_applied trs cg :=
+first_transfo_applied_aux trs cg 0.
+
+Lemma first_transfo_applied_check_trigger trs cg n :
+  match first_transfo_applied_aux trs cg n with
+    | None => True
+    | Some (tr, cg') =>
+        match check_trigger tr n cg with 
+          | None => True
+          | Some cg'' => cg' = cg''
+        end
+  end.
+Proof.
+generalize dependent n.
+generalize dependent cg.
+induction trs as [ | tr trs IHtrs] ; intros cg n.
+- simpl in *. exact I.
+- destruct (first_transfo_applied_aux (tr :: trs) cg n) as [(tr1, cg1) | ] eqn:E.
+  * destruct (check_trigger tr1 n cg) as [ cg2 | ] eqn:E1.
+    simpl in E.
+
+
+ destruct p as (tr1, cg1). 
+    destruct (check_trigger tr1 n cg) eqn:E. 
+    pose proof (IH' := IHtrs).
+    specialize (IHtrs cg1). specialize (IHtrs n).
+    destruct (first_transfo_applied_aux trs cg1 n) eqn:E1.
+    destruct (check_trigger tr n cg1) eqn:E2.
+    destruct p as (tr2, cg2).
+    destruct (check_trigger tr2 n cg1) eqn:E3.
+    subst.
+
+ rewrite E2 in IHtrs.
+ 
+
+
+destruct (first_transfo_applied_aux trs cg) eqn:E.
+    * destruct p as (tr1, cg1). simpl.
+destruct (check_trigger tr1 n cg) eqn:E'.
+subst. destruct (check_trigger tr n cg) eqn:F.
+rewrite F. reflexivity. 
+destruct (first_transfo_applied_aux trs cg (S n)) eqn:F'.
+destruct p as (tr2, cg2). destruct (check_trigger tr2 n cg) eqn:G.
+s
+ 
+
+
+
+  * simpl in *. destruct (check_trigger tr n cg) eqn:F.
+rewrite F. reflexivity. 
+destruct (first_transfo_applied_aux trs' cg (S n)) eqn:F'.
+destruct p as (tr0, cg0). destruct (check_trigger tr0 n cg) eqn:G.
+subst.
+  * destruct (first_transfo_applied_aux (tr :: trs') cg) eqn:E''.
+      { destruct p as (tr'', cg''). rewrite E'.
+subst.
+assert (H : tr'' = tr \/ tr'' = tr').
+destruct (check_trigger tr 0 cg) eqn:F'.
+unfold first_transfo_applied in E''.
+rewrite F' in E''. inversion E''. left. reflexivity. 
+unfold first_transfo_applied in E''. rewrite F' in E''.
+
+destruct trs'. inversion E''. right.
+
+
+    * destruct (first_transfo_applied (tr::trs') cg) eqn:E'.
+unfold first_transfo_applied in E'.
+destruct (check_trigger tr 0 cg) eqn:E''.
+      + inversion E'. subst. exists 0. rewrite E''. reflexivity.
+      + destruct trs'. inversion E'.
+
+eexists.
+destruct cg as [hyps g eq].
+destruct tr as (s, a).
+- destruct (check_trigger (s, a)) eqn:E'.
+    * 
+
+eexists.
+
+
+Lemma first_transfo_applied_length_goal trs cg :
+  match first_transfo_applied trs cg with
+    | None => True
+    | Some (_, cg') => length (G cg') = length (G cg)
+  end.
+Proof.
+destruct (first_transfo_applied trs cg) as [ (tr, cg') | ] eqn:E.
+- inversion E.
+
+
+
+Lemma onestep_length inp :
+  let inp' := prepare inp in
+  match first_transfo_applied (Transfos inp') (CG inp') with
+    | None => True
+    | Some (tr, cg') => 
+      let cg'' := apply tr cg' in
+        length (G cg'') = length (Transfos inp)
+   end.
+Proof.
+simpl.
+destruct 
+(first_transfo_applied (Transfos inp) (prepare_steps (Transfos inp) (CG inp))) 
+as [ (tr, cg') |] eqn:E.
+- destruct inp as [trs cg inv]; simpl. rewrite <- inv.
+
+- exact I.
+
+
+
+
+ "length (G cg'') = length (Transfos inp)"
+
+Definition onestep (inp: input) : option input :=
+  let inp' := prepare inp in
+    match first_transfo_applied (Transfos inp') (CG inp') with
+      | None => None
+      | Some (tr, cg') =>
+        let cg'' := apply tr cg' in Some
+          ({| Transfos := Transfos inp;
+             CG := cg'' ;
+             inv := FF _
+          |})
+      end.
+
+
+
+
 
 
