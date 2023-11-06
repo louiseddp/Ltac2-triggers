@@ -7,6 +7,13 @@ the orchestrator should meet, and to look for a suitable order *)
 Notation "x .1" := (fst x) (at level 60).
 Notation "x .2" := (snd x) (at level 60).
 
+Definition foldi {A B: Type} (f: nat -> B -> A -> B) (l: list A) (acc: B) : B :=
+  let fix aux f l n acc :=
+  match l with
+    | [] => acc
+    | x :: xs => aux f xs (S n) (f n acc x)
+  end
+  in aux f l 0 acc.
 
 Inductive SimplifiedTriggers : Set :=
 GoalSensitive | HypsSensitive | AllSensitive.
@@ -299,6 +306,36 @@ as "seen" the goal.
 This should be done at the begining of the computation 
 but also between each application of a transformation
 All correct inputs should verify the Prepared predicate *)
+
+Definition prepare_step (n: nat) (cg: CoqGoal) (tr: transfo) :=
+  match tr.1 with
+    | AllSensitive => cg
+    | HypsSensitive => 
+      {| Hs := Hs cg;
+         G := seen_n n (G cg);
+         samelength := seen_n_length_goal n cg (samelength cg)
+      |}
+    | GoalSensitive => 
+      {| Hs := seen_n_list n (Hs cg);
+         G := G cg;
+         samelength := seen_n_length_hyp n cg (samelength cg)
+      |}
+  end. 
+
+Axiom FF : forall A, A.
+
+Definition prepare_steps (l: list transfo) (cg: CoqGoal) :=
+foldi prepare_step l cg.
+
+Definition prepare (inp: input) : input :=
+{| Transfos := Transfos inp;
+   CG := prepare_steps (Transfos inp) (CG inp) ;
+   inv := FF (length
+    (G
+       (prepare_steps (Transfos inp)
+          (CG inp))) =
+  length (Transfos inp))
+|}.
 
 
 
