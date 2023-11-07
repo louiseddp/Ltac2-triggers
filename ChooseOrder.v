@@ -454,6 +454,7 @@ induction trs as [ | tr trs IHtrs']; intros n cg.
   * apply check_trigger_length in E. symmetry. assumption.
   * apply IHtrs'.
 Qed.
+
 Lemma onestep_length inp :
   let inp' := prepare inp in
   match first_transfo_applied (Transfos inp') (CG inp') with
@@ -471,25 +472,44 @@ specialize (H (Transfos inp)
 (prepare_steps (Transfos inp) (CG inp)) 0). rewrite E in H. 
 rewrite prepare_steps_length3 in H. assumption.
 exact I.
-Qed.  
+Qed. 
 
+Lemma onestep_length2 inp inp' tr cg cg' :
+inp' = prepare inp -> 
+first_transfo_applied (Transfos inp') (CG inp') = Some (tr, cg) ->
+cg' = apply tr cg -> 
+length (G cg') = length (Transfos inp).
+Proof. 
+intros H H1 H2.
+pose proof (H3 := onestep_length).
+cbv zeta in H3. rewrite H in H1. 
+specialize (H3 inp). rewrite H1 in H3.
+rewrite <- H2 in H3. assumption.
+Qed. 
 
- "length (G cg'') = length (Transfos inp)"
+Lemma first_transfo_applied_match inp'  :
+match first_transfo_applied (Transfos inp') (CG inp') with
+  | None => True
+  | Some (tr, cg) => 
+    first_transfo_applied (Transfos inp') (CG inp') = Some (tr, cg)
+end.
+Proof. 
+destruct (first_transfo_applied (Transfos inp') (CG inp')).
+destruct p as (tr, cg). reflexivity.
+exact I.
+Qed. 
 
-Definition onestep (inp: input) : option input :=
-  let inp' := prepare inp in
-    match first_transfo_applied (Transfos inp') (CG inp') with
-      | None => None
-      | Some (tr, cg') =>
-        let cg'' := apply tr cg' in Some
+Definition onestep (inp: input) : option input.
+Proof.
+pose (inp' := prepare inp).
+destruct (first_transfo_applied (Transfos inp') (CG inp')) as [p |] eqn:E.
+- destruct p as (tr, cg').
+exact (let cg'' := apply tr cg' in Some
           ({| Transfos := Transfos inp;
              CG := cg'' ;
-             inv := FF _
-          |})
-      end.
-
-
-
-
-
+             inv := onestep_length2 inp inp' tr cg' cg'' eq_refl
+                  E eq_refl
+          |})).
+- exact None.
+Defined.
 
