@@ -211,6 +211,25 @@ Definition check_trigger
       |})
   end.
 
+Lemma check_trigger_length tr n cg cg' :
+check_trigger tr n cg = Some cg' -> length (G cg) = length (G cg').
+Proof.
+intro H. 
+destruct tr as (s, a); destruct s ; unfold check_trigger in *;
+simpl in *.
+- destruct (SeenHyp n (G cg)) eqn:E.
+  * inversion H.
+  * inversion H; simpl. symmetry. apply seen_n_length.
+- destruct (SeenHyps n (Hs cg)) eqn:E.
+  * inversion H.
+  * inversion H; reflexivity.
+- destruct (SeenHyps n (Hs cg)) eqn:E; destruct (SeenHyp n (G cg)) eqn:E'.
+  * inversion H.
+  * inversion H; simpl. symmetry. apply seen_n_length.
+  * inversion H; reflexivity.
+  * inversion H; reflexivity.
+Qed.
+
 (* Definition of the apply function: 
 the transformation applies its effect 
 according to the constructor from the Alterations enumeration *)
@@ -301,6 +320,18 @@ Definition apply (tr: transfo) (cg: CoqGoal) :=
          samelength := resetfalse_length_forall3 (G cg) (Hs cg) (samelength cg)
       |}
   end. 
+
+Lemma apply_length cg tr :
+length (G cg) = length (G (apply tr cg)).
+Proof.
+destruct cg as [hyps g].
+destruct tr as (a, s).
+destruct s.
+  - reflexivity.
+  - reflexivity.
+  - apply resetfalse_length1.
+  - apply resetfalse_length1.
+Qed. 
 
 
 (* Prepare an input: the transformations that applies 
@@ -401,7 +432,7 @@ Fixpoint first_transfo_applied_aux
     | [] => None
     | tr :: trs' => 
       match check_trigger tr n cg with
-        | None => first_transfo_applied_aux  trs' cg (S n)
+        | None => first_transfo_applied_aux trs' cg (S n)
         | Some cg' => Some (tr, cg')
       end
   end.
@@ -409,94 +440,20 @@ Fixpoint first_transfo_applied_aux
 Definition first_transfo_applied trs cg :=
 first_transfo_applied_aux trs cg 0.
 
-Lemma first_transfo_applied_check_trigger trs cg n :
+Lemma first_transfo_applied_length_goal trs cg n :
   match first_transfo_applied_aux trs cg n with
-    | None => True
-    | Some (tr, cg') =>
-        match check_trigger tr n cg with 
-          | None => True
-          | Some cg'' => cg' = cg''
-        end
-  end.
-Proof.
-generalize dependent n.
-generalize dependent cg.
-induction trs as [ | tr trs IHtrs] ; intros cg n.
-- simpl in *. exact I.
-- destruct (first_transfo_applied_aux (tr :: trs) cg n) as [(tr1, cg1) | ] eqn:E.
-  * destruct (check_trigger tr1 n cg) as [ cg2 | ] eqn:E1.
-    simpl in E.
-
-
- destruct p as (tr1, cg1). 
-    destruct (check_trigger tr1 n cg) eqn:E. 
-    pose proof (IH' := IHtrs).
-    specialize (IHtrs cg1). specialize (IHtrs n).
-    destruct (first_transfo_applied_aux trs cg1 n) eqn:E1.
-    destruct (check_trigger tr n cg1) eqn:E2.
-    destruct p as (tr2, cg2).
-    destruct (check_trigger tr2 n cg1) eqn:E3.
-    subst.
-
- rewrite E2 in IHtrs.
- 
-
-
-destruct (first_transfo_applied_aux trs cg) eqn:E.
-    * destruct p as (tr1, cg1). simpl.
-destruct (check_trigger tr1 n cg) eqn:E'.
-subst. destruct (check_trigger tr n cg) eqn:F.
-rewrite F. reflexivity. 
-destruct (first_transfo_applied_aux trs cg (S n)) eqn:F'.
-destruct p as (tr2, cg2). destruct (check_trigger tr2 n cg) eqn:G.
-s
- 
-
-
-
-  * simpl in *. destruct (check_trigger tr n cg) eqn:F.
-rewrite F. reflexivity. 
-destruct (first_transfo_applied_aux trs' cg (S n)) eqn:F'.
-destruct p as (tr0, cg0). destruct (check_trigger tr0 n cg) eqn:G.
-subst.
-  * destruct (first_transfo_applied_aux (tr :: trs') cg) eqn:E''.
-      { destruct p as (tr'', cg''). rewrite E'.
-subst.
-assert (H : tr'' = tr \/ tr'' = tr').
-destruct (check_trigger tr 0 cg) eqn:F'.
-unfold first_transfo_applied in E''.
-rewrite F' in E''. inversion E''. left. reflexivity. 
-unfold first_transfo_applied in E''. rewrite F' in E''.
-
-destruct trs'. inversion E''. right.
-
-
-    * destruct (first_transfo_applied (tr::trs') cg) eqn:E'.
-unfold first_transfo_applied in E'.
-destruct (check_trigger tr 0 cg) eqn:E''.
-      + inversion E'. subst. exists 0. rewrite E''. reflexivity.
-      + destruct trs'. inversion E'.
-
-eexists.
-destruct cg as [hyps g eq].
-destruct tr as (s, a).
-- destruct (check_trigger (s, a)) eqn:E'.
-    * 
-
-eexists.
-
-
-Lemma first_transfo_applied_length_goal trs cg :
-  match first_transfo_applied trs cg with
     | None => True
     | Some (_, cg') => length (G cg') = length (G cg)
   end.
 Proof.
-destruct (first_transfo_applied trs cg) as [ (tr, cg') | ] eqn:E.
-- inversion E.
-
-
-
+generalize dependent cg.
+generalize dependent n.
+induction trs as [ | tr trs IHtrs']; intros n cg.
+- exact I.
+- simpl. destruct (check_trigger tr n cg) as [cg' | ] eqn:E.
+  * apply check_trigger_length in E. symmetry. assumption.
+  * apply IHtrs'.
+Qed.
 Lemma onestep_length inp :
   let inp' := prepare inp in
   match first_transfo_applied (Transfos inp') (CG inp') with
@@ -506,15 +463,15 @@ Lemma onestep_length inp :
         length (G cg'') = length (Transfos inp)
    end.
 Proof.
-simpl.
-destruct 
-(first_transfo_applied (Transfos inp) (prepare_steps (Transfos inp) (CG inp))) 
-as [ (tr, cg') |] eqn:E.
-- destruct inp as [trs cg inv]; simpl. rewrite <- inv.
-
-- exact I.
-
-
+unfold first_transfo_applied. simpl.
+destruct (first_transfo_applied_aux (Transfos inp) 
+(prepare_steps (Transfos inp) (CG inp)) 0) as [ (tr, cg) | ] eqn:E.
+rewrite <- apply_length. pose proof (H := first_transfo_applied_length_goal).
+specialize (H (Transfos inp) 
+(prepare_steps (Transfos inp) (CG inp)) 0). rewrite E in H. 
+rewrite prepare_steps_length3 in H. assumption.
+exact I.
+Qed.  
 
 
  "length (G cg'') = length (Transfos inp)"
