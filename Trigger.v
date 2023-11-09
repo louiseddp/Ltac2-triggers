@@ -43,6 +43,17 @@ Ltac2 interpret_trigger_var (tv : trigger_var) :=
     | TGoal => let g := Control.goal () in [g]
   end.
 
+Ltac2 Type hyps_or_goal := [
+  | Hyps ((ident*constr option*constr) list) 
+  | Goal (constr)].
+
+Ltac2 interpret_trigger_var_ck cg (tv: trigger_var) :=
+  let (hyps, g) := cg in
+    match tv with
+      | TSomeHyp => Hyps hyps
+      | TGoal => Goal g
+    end.
+
 Ltac2 rec interpret_constr_with_trigger_form 
   (c : constr_quoted) (tf : trigger_form) :=
   match c, tf with
@@ -88,13 +99,25 @@ Ltac2 rec interpret_constr_with_trigger_form
           | _ => None
         end
     | _ => None
-  end. 
+  end.
 
 Ltac2 interpret_trigger_is a b := 
   let a' := interpret_trigger_var a in
   let result := List.map (fun x => let x' := constr_to_constr_quoted x in 
     interpret_constr_with_trigger_form x' b) a' in
   flatten_option_list result.
+
+Ltac2 interpret_trigger_is_ck cg a b :=
+  let a' := interpret_trigger_var_ck cg a in
+    match a' with
+      | Hyps hyps => 
+        let result := List.map (fun x => let (id, body, cstr) := x in 
+        let x' := constr_to_constr_quoted cstr in 
+        interpret_constr_with_trigger_form x' b) hyps in
+        flatten_option_list result
+      | Goal g => let g' := constr_to_constr_quoted g in
+          interpret_constr_with_trigger_form g' b
+    end.
 
 Ltac2 interpret_trigger_contains_aux (c : constr) (tf : trigger_form) :=
   let cquote := constr_to_constr_quoted c in
@@ -120,6 +143,18 @@ Ltac2 interpret_trigger_contains (tv : trigger_var) (tf: trigger_form) :=
       (fun x => interpret_trigger_contains_aux x tf) a
   in flatten_option_list result.
 
+Ltac2 interpret_trigger_contains_ck cg (tv : trigger_var) (tf: trigger_form) :=
+  let a := interpret_trigger_var_ck cg tv in
+    match a with
+      | Hyps hyps => 
+        let result := List.map (fun x => let (id, body, cstr) := x in 
+        interpret_trigger_contains_aux cstr tf) hyps in
+        flatten_option_list result
+      | Goal g =>
+          interpret_trigger_contains_aux g tf
+    end.
+  
+
 Ltac2 rec interpret_trigger (t : trigger) :=
   match t with
     | TIs a b => interpret_trigger_is a b
@@ -138,6 +173,30 @@ Ltac2 rec interpret_trigger (t : trigger) :=
         | Some res => Some res
         | None => 
           match interpret_trigger t2 with
+            | Some res' => Some res'
+            | None => None
+          end
+      end
+  end.
+
+Ltac2 rec interpret_trigger_ck cg (t : trigger) :=
+  match t with
+    | TIs a b => interpret_trigger_is_ck cg a b
+    | TContains a b => interpret_trigger_contains_ck cg a b
+    | TConj t1 t2 => 
+      match interpret_trigger_ck cg t1 with
+        | Some res => 
+          match interpret_trigger_ck cg t2 with
+            | Some res' => Some res' 
+            | None => None
+          end
+        | None => None
+      end              
+    | TDisj t1 t2 => 
+      match interpret_trigger_ck cg t1 with 
+        | Some res => Some res
+        | None => 
+          match interpret_trigger_ck cg t2 with
             | Some res' => Some res'
             | None => None
           end

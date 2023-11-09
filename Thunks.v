@@ -66,6 +66,19 @@ Ltac2 trigs () :=
   (thunkleft, trigger_left, "left");
   (thunkright, trigger_right, "right")].
 
+Ltac2 thunks := 
+[thunksplit; thunkintro; thunkelimnat; thunkassumption; thunkorelim;
+thunkleft; thunkright].
+
+Ltac2 trigs2 () :=
+[(trigger_and_intro, "split");
+ (trigger_intro, "intro");
+ (trigger_elim_nat (), "elim_nat");
+ (trigger_axiom, "assumption");
+ (trigger_or_elim, "or_elim");
+ (trigger_left, "left");
+ (trigger_right, "right")].
+
 Ltac2 run (t : constr list -> unit) (l : constr list) := 
 t l.
 
@@ -138,6 +151,11 @@ Ltac2 orchestrator () :=
     end
   in
   trigger' (trigs ()) (trigs ()) triggered_tactics.
+
+Ltac2 orchestrator_ck_aux () cg :=
+  let (hyps, g) := cg in
+  
+  
 
 (* Tactics with no arguments : 
 
