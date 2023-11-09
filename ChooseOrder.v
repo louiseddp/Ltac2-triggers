@@ -580,12 +580,11 @@ destruct n eqn:En.
 - pose (inp' := prepare inp).
 destruct (first_transfo_applied (Transfos inp') (CG inp')) as [p |] eqn:E.
   * destruct p as (tr, cg'). pose (k := find (Transfos inp') tr).
-pose (cg'' := block_trigger k cg').
-refine (match (onestep {| Transfos := Transfos inp'; CG := cg''; 
+refine (match (onestep {| Transfos := Transfos inp'; CG := block_trigger k cg'; 
 inv := _ |}) with
 | Some x => Some x 
 | None => None
-end). unfold cg''. rewrite block_trigger_length.
+end). rewrite block_trigger_length.
 pose proof (H := first_transfo_length).
 specialize (H inp' tr (CG inp') cg').
 apply H in E. apply E. simpl. unfold prepare in inp'.
@@ -600,5 +599,12 @@ eapply prepare_steps_length2.
 - exact (onestep inp).
 Defined.
 
-Print onestep_fuel.
+Definition example_input1 :=
+{| Transfos := [(HypsSensitive, ChangesHyps); (GoalSensitive, ChangesAll)];
+   CG := {| Hs := [[false; false]; [false; false]; [false; false]]; 
+            G := [false; false] ; 
+            samelength := eq_refl |};
+   inv := eq_refl |}.
+
+Compute (onestep_fuel 1 example_input1).
 
