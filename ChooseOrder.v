@@ -520,23 +520,6 @@ exact (let cg'' := apply tr cg' in Some
 - exact None.
 Defined.
 
-(* 
-TODO add a ChangeHyp? 
-Assumptions about the transformations
-
-Avoid infinite loops in our formalization :
-- the alterations ChangesHyps triggered by hypotheses 
-can be applied only a finite number of time (n times)
-- the alterations ChangesAll can be applied only a finite 
-number of time (m times)
-- the alterations ChangesGoal triggered by the goal can
-be applied only a finite number of time (j times ) 
-- the generative hypotheses which are triggered by hypotheses 
-can be applied only a finite number of time (k times)
-
-==> we need a version of onestep with some fuel 
-*)
-
 Definition block_trigger (n: nat) (cg: CoqGoal) : CoqGoal.
 Proof. 
 destruct cg as (hyps0, g0, inv0).
@@ -607,4 +590,21 @@ Definition example_input1 :=
    inv := eq_refl |}.
 
 Compute (onestep_fuel 1 example_input1).
+
+(* 
+TODO add a ChangeHyp? 
+Assumptions about the transformations
+
+Avoid infinite loops in our formalization :
+- the alterations ChangesHyps triggered by hypotheses 
+can be applied only a finite number of time (n times)
+- the alterations ChangesAll can be applied only a finite 
+number of time (m times)
+- the alterations ChangesGoal triggered by the goal can
+be applied only a finite number of time (j times ) 
+- the generative hypotheses which are triggered by hypotheses 
+can be applied only a finite number of time (k times)
+
+==> we need a version of onestep with some fuel 
+*)
 

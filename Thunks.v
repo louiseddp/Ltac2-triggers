@@ -45,9 +45,9 @@ currify tac (constr_to_tacval l).
 
 Ltac2 Type Thunk := 
 [ ChangesGoal (constr list -> unit)
-| ChangesHyp (constr list  -> unit)
+| ChangesHyps (constr list  -> constr list) (* the changed hypotheses *)
 | ChangesAll (constr list -> unit)
-| ProducesHyp (constr list -> unit)]. 
+| ProducesHyp (constr list -> constr list)]. (* the new hypoteses *) 
 
 Ltac2 thunksplit := fun l => apply_ltac1 ltac1val:(split) l.
 Ltac2 thunkassumption := fun l => apply_ltac1 ltac1val:(assumption) l.
@@ -66,18 +66,50 @@ Ltac2 trigs () :=
   (thunkleft, trigger_left, "left");
   (thunkright, trigger_right, "right")].
 
-Print Ltac2 trigs.
-
 Ltac2 run (t : constr list -> unit) (l : constr list) := 
 t l.
 
+Ltac2 hyp_equal h h' :=
+let (id1, opt1, c1) := h in
+let (id2, opt2, c2) := h' in
+if Ident.equal id1 id2 then
+  if Constr.equal c1 c2 then
+    match opt1, opt2 with
+      | Some x, Some y => Constr.equal x y
+      | None, Some _ => false
+      | Some _, None => false
+      | None, None => true
+    end
+  else false
+else false.
+
+Ltac2 rec diff_hyps hs1 hs2 :=
+  match hs1, hs2 with
+    | [], hs2' => hs2'
+    | x :: xs, y :: ys => 
+      if hyp_equal x y then diff_hyps xs ys 
+      else y :: diff_hyps xs ys
+    | x :: xs, [] => [] (* we do not consider removed hypotheses *)
+  end.
+
+(* warning: may cause problems if the tactic creates several goals.
+TODO We need to clarify this point *)
+Ltac2 run_and_get_changes (t : constr list -> unit) (l : constr list) :=
+let g1 := Control.goal () in
+let hs1 := Control.hyps () in
+t l ; Control.enter (fun () => ());
+let g2 := Control.goal () in
+let hs2 := Control.hyps () in
+let g3 := if Constr.equal g1 g2 then None else Some g2 in
+(diff_hyps hs1 hs2, g3).
 
 (* The name of the tactic triggered + on which hypothesis it should be triggered *)
 Ltac2 (* mutable *) triggered_tactics : (string*(constr list)) list := [].
 
 Ltac2 trigger_tac_equal (x: string*(constr list)) (y: string*(constr list)) :=
   match x, y with
-    | (s1, l1), (s2, l2) => Bool.and (String.equal s1 s2) (List.equal Constr.equal l1 l2)
+    | (s1, l1), (s2, l2) => 
+       Bool.and (String.equal s1 s2) (List.equal Constr.equal l1 l2)
   end. 
 
 
