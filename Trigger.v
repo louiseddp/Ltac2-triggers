@@ -45,7 +45,7 @@ Ltac2 interpret_trigger_var (tv : trigger_var) :=
 
 Ltac2 Type hyps_or_goal := [
   | Hyps ((ident*constr option*constr) list) 
-  | Goal (constr)].
+  | Goal (constr option)].
 
 Ltac2 interpret_trigger_var_ck cg (tv: trigger_var) :=
   let (hyps, g) := cg in
@@ -115,8 +115,12 @@ Ltac2 interpret_trigger_is_ck cg a b :=
         let x' := constr_to_constr_quoted cstr in 
         interpret_constr_with_trigger_form x' b) hyps in
         flatten_option_list result
-      | Goal g => let g' := constr_to_constr_quoted g in
-          interpret_constr_with_trigger_form g' b
+      | Goal g => 
+          let g' := Option.map constr_to_constr_quoted g in
+          match g' with
+            | None => None
+            | Some g'' => interpret_constr_with_trigger_form g'' b
+          end
     end.
 
 Ltac2 interpret_trigger_contains_aux (c : constr) (tf : trigger_form) :=
@@ -150,8 +154,11 @@ Ltac2 interpret_trigger_contains_ck cg (tv : trigger_var) (tf: trigger_form) :=
         let result := List.map (fun x => let (id, body, cstr) := x in 
         interpret_trigger_contains_aux cstr tf) hyps in
         flatten_option_list result
-      | Goal g =>
-          interpret_trigger_contains_aux g tf
+      | Goal g => 
+          match g with
+            | None => None 
+            | Some g' => interpret_trigger_contains_aux g' tf
+          end
     end.
   
 

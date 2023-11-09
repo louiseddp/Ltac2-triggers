@@ -152,7 +152,11 @@ Ltac2 orchestrator () :=
   in
   trigger' (trigs ()) (trigs ()) triggered_tactics.
 
-Ltac2 orchestrator_ck_aux () cg :=
+Ltac2 orchestrator_ck_aux 
+  cg (* Coq Goal or modified Coq Goal *)
+  trigs (* triggers *)
+  tacs (* tactics => should have same length as triggers *)
+  trigtacs (* triggered tactics, pair between a name and a tactic *) :=
   let (hyps, g) := cg in
   
   
