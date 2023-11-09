@@ -66,18 +66,23 @@ Ltac2 trigs () :=
   (thunkleft, trigger_left, "left");
   (thunkright, trigger_right, "right")].
 
-Ltac2 thunks := 
-[thunksplit; thunkintro; thunkelimnat; thunkassumption; thunkorelim;
-thunkleft; thunkright].
+Ltac2 thunks () := 
+[(thunksplit, "split"); 
+(thunkintro, "intro") ; 
+(thunkelimnat, "elim_nat"); 
+(thunkassumption, "assumption"); 
+(thunkorelim, "or_elim");
+(thunkleft, "left"); 
+(thunkright, "right")].
 
 Ltac2 trigs2 () :=
-[(trigger_and_intro, "split");
- (trigger_intro, "intro");
- (trigger_elim_nat (), "elim_nat");
- (trigger_axiom, "assumption");
- (trigger_or_elim, "or_elim");
- (trigger_left, "left");
- (trigger_right, "right")].
+[(trigger_and_intro);
+ (trigger_intro);
+ (trigger_elim_nat ());
+ (trigger_axiom);
+ (trigger_or_elim);
+ (trigger_left);
+ (trigger_right)].
 
 Ltac2 run (t : constr list -> unit) (l : constr list) := 
 t l.
@@ -166,22 +171,32 @@ Ltac2 rec orchestrator_ck_aux
     | [], [] => cg
     | it :: its, (tac, name) :: tacs' =>
          match it with
-          | None => (* (Message.print (Message.concat 
-             (Message.of_string "The following tactic was not triggered: ") (Message.of_string name))) ; *) 
+          | None => let _ := (Message.print (Message.concat 
+             (Message.of_string "The following tactic was not triggered: ") (Message.of_string name))) in 
              orchestrator_ck_aux cg its tacs' trigtacs
           | Some l => 
             if Bool.and (Bool.neg (Int.equal (List.length l) 0)) (List.mem trigger_tac_equal (name, l) trigtacs) then 
-(*             Message.print (Message.concat 
-            (Message.of_string name) (Message.of_string " was already applied")); *)
+              let _ := Message.print (Message.concat 
+            (Message.of_string name) (Message.of_string " was already applied")) in
             orchestrator_ck_aux cg its tacs' trigtacs
-            else (* (Message.print (Message.concat 
-             (Message.of_string "Automaticaly applied ") (Message.of_string name))) ; *)
+            else let _ := (Message.print (Message.concat 
+             (Message.of_string "Automaticaly applied ") (Message.of_string name))) in
             let cg' := run_and_get_changes tac l in 
             orchestrator_ck_aux cg' interp_trigs tacs trigtacs
         end
-  end.
-  
-  
+  end. Print Ltac2 orchestrator_ck_aux.
+
+Ltac2 orchestrator_ck trigs tacs :=
+  let g := Control.goal () in
+  let hyps := Control.hyps () in
+  let cg := (hyps, Some g) in
+  let interp_trigs := interpret_triggers_ck cg trigs in
+  let _ := orchestrator_ck_aux cg interp_trigs tacs [] in (). (*  in
+  match cg' with
+    | ([], None) => let _ := Message.print (Message.of_string "End of orchestrator !!!!") in ()
+    | _ => fail "should not happen ???"
+  end *)
+
   
 
 (* Tactics with no arguments : 
@@ -197,10 +212,15 @@ on the goal, the hypotheses etc.) + add trakt in it *)
 
 Tactic Notation "orchestrator" := ltac2:(orchestrator ()).
 
+Tactic Notation "orchestrator_ck" := ltac2:(orchestrator_ck (trigs2 ()) (thunks ())).
+
 Section tests.
 
 Goal (forall (A B C D : Prop), nat -> A -> B -> C -> D -> (A /\ B /\ C /\ D)).
-orchestrator. Qed.
+orchestrator.
+Restart.
+orchestrator_ck.
+
 
 Goal (forall (A B : Prop), A \/ B -> B \/ A).
 orchestrator. assumption. Qed.
