@@ -73,7 +73,7 @@ Ltac2 rec interpret_constr_with_trigger_form
          match fl with
           | FNothing => Some []
           | FType => Some tv
-          | FTerm => Some [get_hyp c]
+          | FTerm => Some [get_hyp c] (* TODO focus problem *)
          end
        else None
     | _, TAny b => if b then Some [constr_quoted_to_constr c] else Some []
@@ -101,6 +101,58 @@ Ltac2 rec interpret_constr_with_trigger_form
     | _ => None
   end.
 
+Ltac2 rec interpret_constr_with_trigger_form_ck 
+ cg (c : constr_quoted) (tf : trigger_form) :=
+  match c, tf with
+    | Term c, TTerm c' b => 
+      if equal c c' then 
+        if b then Some [c']
+        else Some [] 
+      else None
+    | Term c, TType t b => 
+        if equal (Constr.type c) t then
+          if b then Some [t]
+          else Some []  
+        else None 
+    | Term c, TVar v fl => 
+       let tv := interpret_trigger_var_ck cg v in
+       let tv' :=
+       match tv with
+        | Hyps hyps => List.map (fun x => let (id, bod, ty) := x in ty) hyps
+        | Goal opt => match opt with | None => [] | Some x => [x] end
+       end in 
+       if List.mem equal c tv' then 
+         match fl with
+          | FNothing => Some []
+          | FType => Some tv'
+          | FTerm => Some [get_hyp c]
+         end
+       else None
+    | _, TAny b => if b then Some [constr_quoted_to_constr c] else Some []
+    | Arrow c1 c2, TArr tf1 tf2 => 
+      let o1 := interpret_constr_with_trigger_form_ck cg c1 tf1 in
+      let o2 := interpret_constr_with_trigger_form_ck cg c2 tf2 in
+        match o1, o2 with
+          | Some l1, Some l2 => Some (List.append l1 l2)
+          | _ => None
+        end
+    | And c1 c2, TAnd tf1 tf2 =>
+      let o1 := interpret_constr_with_trigger_form_ck cg c1 tf1 in
+      let o2 := interpret_constr_with_trigger_form_ck cg c2 tf2 in
+        match o1, o2 with
+          | Some l1, Some l2 => Some (List.append l1 l2)
+          | _ => None
+        end
+    | Or c1 c2, TOr tf1 tf2 => 
+      let o1 := interpret_constr_with_trigger_form_ck cg c1 tf1 in
+      let o2 := interpret_constr_with_trigger_form_ck cg c2 tf2 in
+        match o1, o2 with
+          | Some l1, Some l2 => Some (List.append l1 l2)
+          | _ => None
+        end
+    | _ => None
+  end.
+
 Ltac2 interpret_trigger_is a b := 
   let a' := interpret_trigger_var a in
   let result := List.map (fun x => let x' := constr_to_constr_quoted x in 
@@ -113,13 +165,13 @@ Ltac2 interpret_trigger_is_ck cg a b :=
       | Hyps hyps => 
         let result := List.map (fun x => let (id, body, cstr) := x in 
         let x' := constr_to_constr_quoted cstr in 
-        interpret_constr_with_trigger_form x' b) hyps in
+        interpret_constr_with_trigger_form_ck cg x' b) hyps in
         flatten_option_list result
       | Goal g => 
           let g' := Option.map constr_to_constr_quoted g in
           match g' with
             | None => None
-            | Some g'' => interpret_constr_with_trigger_form g'' b
+            | Some g'' => interpret_constr_with_trigger_form_ck cg g'' b
           end
     end.
 
@@ -127,6 +179,23 @@ Ltac2 interpret_trigger_contains_aux (c : constr) (tf : trigger_form) :=
   let cquote := constr_to_constr_quoted c in
   let rec tac_aux cquote tf :=
   match interpret_constr_with_trigger_form cquote tf with
+    | Some success => Some success 
+    | None => 
+      match cquote with
+        | Arrow c1 c2 | And c1 c2 | Or c1 c2 => 
+          match tac_aux c1 tf with
+            | None => tac_aux c2 tf
+            | Some success' => Some success'
+          end
+        | _ => None
+      end  
+    end 
+    in tac_aux cquote tf.
+
+Ltac2 interpret_trigger_contains_aux_ck cg (c : constr) (tf : trigger_form) :=
+  let cquote := constr_to_constr_quoted c in
+  let rec tac_aux cquote tf :=
+  match interpret_constr_with_trigger_form_ck cg cquote tf with
     | Some success => Some success 
     | None => 
       match cquote with
@@ -152,12 +221,12 @@ Ltac2 interpret_trigger_contains_ck cg (tv : trigger_var) (tf: trigger_form) :=
     match a with
       | Hyps hyps => 
         let result := List.map (fun x => let (id, body, cstr) := x in 
-        interpret_trigger_contains_aux cstr tf) hyps in
+        interpret_trigger_contains_aux_ck cg cstr tf) hyps in
         flatten_option_list result
       | Goal g => 
           match g with
             | None => None 
-            | Some g' => interpret_trigger_contains_aux g' tf
+            | Some g' => interpret_trigger_contains_aux_ck cg g' tf
           end
     end.
   

@@ -110,16 +110,21 @@ Ltac2 rec diff_hyps hs1 hs2 :=
     | x :: xs, [] => [] (* we do not consider removed hypotheses *)
   end.
 
+
+(* Goal True /\ True.
+split. ltac2:(Control.focus 1 1 (fun _ => Message.print (Message.of_constr (Control.goal())))). *)
+
+
 (* warning: may cause problems if the tactic creates several goals.
 TODO We need to clarify this point *)
 Ltac2 run_and_get_changes (t : constr list -> unit) (l : constr list) :=
 let g1 := Control.goal () in
 let hs1 := Control.hyps () in
-t l ; Control.enter (fun () => ());
+t l ; Control.focus 1 1 (fun () => 
 let g2 := Control.goal () in
 let hs2 := Control.hyps () in
 let g3 := if Constr.equal g1 g2 then None else Some g2 in
-(diff_hyps hs1 hs2, g3).
+(diff_hyps hs1 hs2, g3)).
 
 (* The name of the tactic triggered + on which hypothesis it should be triggered *)
 Ltac2 (* mutable *) triggered_tactics : (string*(constr list)) list := [].
@@ -158,13 +163,14 @@ Ltac2 orchestrator () :=
   trigger' (trigs ()) (trigs ()) triggered_tactics.
 
 Ltac2 interpret_triggers_ck cg trigs :=
-List.map (interpret_trigger_ck cg) trigs. 
+List.map (interpret_trigger_ck cg) trigs.  
 
 Ltac2 rec orchestrator_ck_aux
   cg (* Coq Goal or modified Coq Goal *)
-  interp_trigs (* interpretation of triggers *)
+  trigs (* triggers *)
   tacs (* tactics => should have same length as triggers *)
   trigtacs (* triggered tactics, pair between a name and a tactic *) :=
+  let interp_trigs := interpret_triggers_ck cg trigs in
   match interp_trigs, tacs with
     | [], _ :: _ => Utils.fail "you forgot to specify a trigger for a or several tactics"
     | _ :: _, [] => Utils.fail "you have more triggers than tactics"
@@ -173,29 +179,30 @@ Ltac2 rec orchestrator_ck_aux
          match it with
           | None => let _ := (Message.print (Message.concat 
              (Message.of_string "The following tactic was not triggered: ") (Message.of_string name))) in 
-             orchestrator_ck_aux cg its tacs' trigtacs
+             orchestrator_ck_aux cg (List.tl trigs) tacs' trigtacs
           | Some l => 
             if Bool.and (Bool.neg (Int.equal (List.length l) 0)) (List.mem trigger_tac_equal (name, l) trigtacs) then 
               let _ := Message.print (Message.concat 
             (Message.of_string name) (Message.of_string " was already applied")) in
-            orchestrator_ck_aux cg its tacs' trigtacs
-            else let _ := (Message.print (Message.concat 
+            orchestrator_ck_aux cg (List.tl trigs) tacs' trigtacs
+            else
+            let cg' := run_and_get_changes tac l in
+            let _ := (Message.print (Message.concat 
              (Message.of_string "Automaticaly applied ") (Message.of_string name))) in
-            let cg' := run_and_get_changes tac l in 
-            orchestrator_ck_aux cg' interp_trigs tacs trigtacs
+            orchestrator_ck_aux cg' trigs tacs trigtacs
         end
-  end. Print Ltac2 orchestrator_ck_aux.
+  end.
 
-Ltac2 orchestrator_ck trigs tacs :=
+Ltac2 rec orchestrator_ck trigs tacs :=
   let g := Control.goal () in
   let hyps := Control.hyps () in
   let cg := (hyps, Some g) in
-  let interp_trigs := interpret_triggers_ck cg trigs in
-  let _ := orchestrator_ck_aux cg interp_trigs tacs [] in (). (*  in
+  let cg' := orchestrator_ck_aux cg trigs tacs [] 
+  in
   match cg' with
     | ([], None) => let _ := Message.print (Message.of_string "End of orchestrator !!!!") in ()
-    | _ => fail "should not happen ???"
-  end *)
+    | _ => Control.enter (fun () => orchestrator_ck trigs tacs)
+  end.
 
   
 
