@@ -152,12 +152,35 @@ Ltac2 orchestrator () :=
   in
   trigger' (trigs ()) (trigs ()) triggered_tactics.
 
-Ltac2 orchestrator_ck_aux 
+Ltac2 interpret_triggers_ck cg trigs :=
+List.map (interpret_trigger_ck cg) trigs. 
+
+Ltac2 rec orchestrator_ck_aux
   cg (* Coq Goal or modified Coq Goal *)
-  trigs (* triggers *)
+  interp_trigs (* interpretation of triggers *)
   tacs (* tactics => should have same length as triggers *)
   trigtacs (* triggered tactics, pair between a name and a tactic *) :=
-  let (hyps, g) := cg in
+  match interp_trigs, tacs with
+    | [], _ :: _ => Utils.fail "you forgot to specify a trigger for a or several tactics"
+    | _ :: _, [] => Utils.fail "you have more triggers than tactics"
+    | [], [] => cg
+    | it :: its, (tac, name) :: tacs' =>
+         match it with
+          | None => (* (Message.print (Message.concat 
+             (Message.of_string "The following tactic was not triggered: ") (Message.of_string name))) ; *) 
+             orchestrator_ck_aux cg its tacs' trigtacs
+          | Some l => 
+            if Bool.and (Bool.neg (Int.equal (List.length l) 0)) (List.mem trigger_tac_equal (name, l) trigtacs) then 
+(*             Message.print (Message.concat 
+            (Message.of_string name) (Message.of_string " was already applied")); *)
+            orchestrator_ck_aux cg its tacs' trigtacs
+            else (* (Message.print (Message.concat 
+             (Message.of_string "Automaticaly applied ") (Message.of_string name))) ; *)
+            let cg' := run_and_get_changes tac l in 
+            orchestrator_ck_aux cg' interp_trigs tacs trigtacs
+        end
+  end.
+  
   
   
 
