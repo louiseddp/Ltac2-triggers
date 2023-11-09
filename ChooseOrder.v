@@ -18,28 +18,18 @@ Definition foldi {A B} f l acc := @foldi_aux A B f l 0 acc.
 Inductive SimplifiedTriggers : Set :=
   GoalSensitive | HypsSensitive | AllSensitive.
 
+Scheme Equality for SimplifiedTriggers.
+
 Inductive Alterations : Set :=
   ProducesHyp | ChangesHyps | ChangesGoal | ChangesAll.
+
+Scheme Equality for Alterations.
 
 Definition hyp := list bool.
 
 Definition hyps := list (list bool).
 
 Definition goal := list bool.
-
-Fixpoint eqb (l1 l2: list bool) :=
-  match l1, l2 with
-    | [], [] => true
-    | [], _ :: _ => false
-    | _ :: _, [] => false
-    | x :: xs, y :: ys => Bool.eqb x y && eqb xs ys
-  end. 
-
-Fixpoint Inb (h: list bool) (hs: list (list bool)) : bool :=
-  match hs with
-    | [] => false
-    | h' :: hs => eqb h h' || Inb h hs
-  end.
 
 Definition same_length {A : Type} (l1 l2: list A) :=
 Nat.eqb (length l1) (length l2).
@@ -50,6 +40,20 @@ G : goal;
 samelength : forallb (same_length G) Hs = true }. 
 
 Definition transfo := (SimplifiedTriggers*Alterations)%type.
+
+Definition transfo_eqb (tr tr': transfo) : bool := 
+  match tr, tr' with
+    | (st1, alt1), (st2, alt2) => 
+      SimplifiedTriggers_beq st1 st2 && Alterations_beq alt1 alt2
+  end.
+
+Fixpoint find_aux (trs: list transfo) (tr: transfo) (n: nat) :=
+  match trs with
+    | [] => n
+    | x :: xs => if transfo_eqb x tr then n else find_aux xs tr (S n)
+  end.
+
+Definition find trs tr := find_aux trs tr 0.
 
 Record input := mkInput 
 { Transfos: list transfo ;
@@ -180,7 +184,7 @@ Proof.
 intro H. rewrite seen_n_list_length.
 - reflexivity.
 - assumption.
-Qed. Print SeenHyp.
+Qed. 
 
 Definition check_trigger 
 (tr: transfo) 
@@ -231,8 +235,9 @@ simpl in *.
 Qed.
 
 (* Definition of the apply function: 
-the transformation applies its effect 
-according to the constructor from the Alterations enumeration *)
+the nth-transformation applies its effect 
+according to the constructor from the Alterations enumeration 
+*)
 
 Lemma new_hyp_length_goal_aux (l : list bool) :
   same_length l (NewHyp (length l)) = true.
@@ -422,8 +427,6 @@ Proof. reflexivity. Qed.
 (* One step: the input is "prepared" and 
 then we applied the first transformation triggered *)
 
-Axiom FF: forall A, A.
-
 Fixpoint first_transfo_applied_aux 
 (trs: list transfo) 
 (cg: CoqGoal) 
@@ -499,6 +502,10 @@ destruct p as (tr, cg). reflexivity.
 exact I.
 Qed. 
 
+
+(* onestep prepares the input, find the first transformation 
+that can be applied, and applies it *)
+
 Definition onestep (inp: input) : option input.
 Proof.
 pose (inp' := prepare inp).
@@ -512,4 +519,86 @@ exact (let cg'' := apply tr cg' in Some
           |})).
 - exact None.
 Defined.
+
+(* 
+TODO add a ChangeHyp? 
+Assumptions about the transformations
+
+Avoid infinite loops in our formalization :
+- the alterations ChangesHyps triggered by hypotheses 
+can be applied only a finite number of time (n times)
+- the alterations ChangesAll can be applied only a finite 
+number of time (m times)
+- the alterations ChangesGoal triggered by the goal can
+be applied only a finite number of time (j times ) 
+- the generative hypotheses which are triggered by hypotheses 
+can be applied only a finite number of time (k times)
+
+==> we need a version of onestep with some fuel 
+*)
+
+Definition block_trigger (n: nat) (cg: CoqGoal) : CoqGoal.
+Proof. 
+destruct cg as (hyps0, g0, inv0).
+pose (hyps := seen_n_list n hyps0).
+pose (g := seen_n n g0).
+assert (H : forallb
+     (same_length (seen_n n g0))
+     (seen_n_list n hyps0) = true).
+unfold same_length.
+rewrite seen_n_length.
+pose proof (H1 := seen_n_list_length).
+eapply H1 in inv0. eassumption. 
+exact ({| Hs := hyps; G := g ; samelength := H |}).
+Defined.
+
+Lemma block_trigger_length cg k : 
+length (G (block_trigger k cg)) = length (G cg).
+Proof.
+destruct cg as (hyps, g, inv).
+destruct k ; unfold block_trigger; destruct g ; simpl in *; try reflexivity.
+rewrite seen_n_length. reflexivity.
+Qed.
+
+Lemma first_transfo_length inp tr cg cg' :
+first_transfo_applied (Transfos inp) (CG inp) = Some (tr, cg') ->
+length (G cg') = length (G cg) -> 
+length (G cg') = length (Transfos inp).
+Proof. 
+intros H H1.
+rewrite H1.
+destruct inp as (trs, cg0, inv).
+simpl in *.
+pose proof (H2 := first_transfo_applied_length_goal).
+unfold first_transfo_applied in H.
+specialize (H2 trs cg0 0). rewrite H in H2.
+rewrite <- inv. rewrite <- H2. rewrite <- H1. reflexivity. Qed.
+
+Definition onestep_fuel (n: nat) (inp: input) : option input.
+Proof.
+destruct n eqn:En.
+- pose (inp' := prepare inp).
+destruct (first_transfo_applied (Transfos inp') (CG inp')) as [p |] eqn:E.
+  * destruct p as (tr, cg'). pose (k := find (Transfos inp') tr).
+pose (cg'' := block_trigger k cg').
+refine (match (onestep {| Transfos := Transfos inp'; CG := cg''; 
+inv := _ |}) with
+| Some x => Some x 
+| None => None
+end). unfold cg''. rewrite block_trigger_length.
+pose proof (H := first_transfo_length).
+specialize (H inp' tr (CG inp') cg').
+apply H in E. apply E. simpl. unfold prepare in inp'.
+rewrite <- prepare_steps_length2 with (trs := Transfos inp).
+pose proof (H1 := first_transfo_applied_length_goal).
+specialize (H1 (Transfos inp') (CG inp') 0).
+unfold first_transfo_applied in E.
+rewrite E in H1. unfold inp' in H1.
+simpl in *. rewrite <- H1.
+eapply prepare_steps_length2.
+ * exact None.
+- exact (onestep inp).
+Defined.
+
+Print onestep_fuel.
 
