@@ -119,21 +119,11 @@ Ltac2 rec diff_hyps hs1 hs2 :=
     | x :: xs, [] => [] (* we do not consider removed hypotheses *)
   end.
 
-(* Ltac2 run_and_get_changes cg (t : constr list -> unit) (l : constr list) :=
-let cg' := cg.(state) in
-let (hs1, g1) := cg' in
-t l ;
-Control.enter (fun () =>
-let g2 := Control.goal () in
-let hs2 := Control.hyps () in
-let g3 :=
-  match g1 with
-    | None => None
-    | Some g1' => if Constr.equal g1' g2 then None else Some g2 
-  end in
-cg.(state) := (diff_hyps hs1 hs2, g3)). *)
-
 (* The name of the tactic triggered + on which hypothesis it should be triggered *)
+
+Ltac2 Type triggered_tactics :=
+{ mutable trs : (string*(constr list)) list  }.
+
 Ltac2 (* mutable *) triggered_tactics : (string*(constr list)) list := [].
 
 Ltac2 trigger_tac_equal (x: string*(constr list)) (y: string*(constr list)) :=
@@ -196,7 +186,7 @@ Ltac2 rec orchestrator_ck_aux
          match it with
           | None => let _ := (Message.print (Message.concat 
              (Message.of_string "The following tactic was not triggered: ") (Message.of_string name))) in 
-             orchestrator_ck_aux cg (List.tl trigs) tacs' trigtacs
+             orchestrator_ck_aux cg (List.tl trigs) tacs' trigtacs (* TODO: memorize initial tacs to reuse it *)
           | Some l => 
             if Bool.and (Bool.neg (Int.equal (List.length l) 0)) 
               (List.mem trigger_tac_equal (name, l) trigtacs) then 
@@ -218,7 +208,7 @@ Ltac2 rec orchestrator_ck_aux
               cg.(state) := (diff_hyps hs1 hs2, g3) ;        
               let _ := (Message.print (Message.concat 
               (Message.of_string "Automaticaly applied ") (Message.of_string name))) in
-              orchestrator_ck_aux cg trigs tacs trigtacs)
+              orchestrator_ck_aux cg trigs tacs ((name, l) :: trigtacs))
         end
   end.
 
