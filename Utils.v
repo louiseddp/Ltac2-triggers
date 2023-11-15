@@ -15,7 +15,7 @@ Qed.
 
 Ltac2 or_elim (a : constr) (b : constr) := apply or_elim with (A := $a) (B := $b).
 
-Ltac or_elim' A B := apply or_elim with (A := A) (B := B).
+Ltac or_elim' x y := apply or_elim with (A := x) (B := y).
 
 Lemma test_or_elim (A B C : Prop) : A \/ B -> A \/ B \/ C.
 Proof.
@@ -25,6 +25,12 @@ or_elim' A B.
   * intro Ha. left. assumption.
   * intro Hb. right. left. assumption.
 Qed.
+
+Lemma test2_or_elim (A B C D : Prop) : A \/ B \/ C \/ D -> D \/ C \/ B \/ A.
+Proof.
+intros Hor.
+or_elim' A (B \/ C \/ D).
+Abort.
 
 (** and_elim **) 
 
@@ -39,6 +45,37 @@ end.
 Goal forall (A B : Prop), A /\ B -> False.
 Proof.
 intros A B H. and_elim A B. Abort.
+
+(** weaken **)
+
+Ltac2 weaken_aux (a : constr) b :=
+let ty := Constr.type a in
+assert ($ty \/ $b) by (left; assumption).
+
+Ltac2 rec weaken b :=
+let hyps := Control.hyps () in
+List.iter (fun x => let (id, opt, ty) := x in
+if Constr.equal ty 'Prop then
+let a := Control.hyp id in
+weaken_aux b a else ()) hyps.
+
+Goal (forall (A B C D E : Prop), A -> False).
+intros A B C D E H.
+ltac2:(weaken 'H).
+Abort.
+
+Ltac weaken a := 
+let tac := ltac2:(a |- 
+let a' := Ltac1.to_constr a in 
+  match a' with
+    | None => () 
+    | Some a'' => weaken a''
+  end) in tac a.
+
+Goal (forall (A B C D E : Prop), A -> False).
+intros A B C D E H.
+weaken H.
+Abort.
 
 (** Utilities **)
 

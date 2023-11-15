@@ -19,7 +19,11 @@ Ltac2 trigger_axiom := TIs TGoal (TVar TSomeHyp FNothing).
 Ltac2 trigger_intro := TIs TGoal (TArr (TAny false) (TAny false)).
 Ltac2 trigger_or_elim := TIs TSomeHyp (TOr tMetavar tMetavar).
 Ltac2 trigger_left := TIs TGoal (TOr (TVar TSomeHyp FNothing) tDiscard).
-Ltac2 trigger_right := TIs TGoal (TOr tDiscard (TVar TSomeHyp FNothing)).
+Ltac2 trigger_right := 
+TConj (TContains TGoal (TOr tDiscard (TVar TSomeHyp FNothing)))
+(TIs TGoal (TOr tDiscard tDiscard)).
+Ltac2 trigger_weaken :=  TConj (TIs TGoal (TOr tDiscard tDiscard)) 
+(TContains TGoal (TVar TSomeHyp FTerm)).
 
 (** warning : thunk because constrs are only produced at RUNTIME *)
 Ltac2 trigger_elim_nat () := TIs TSomeHyp (TType 'Set false).
@@ -61,6 +65,7 @@ Ltac2 thunkorelim := fun l => apply_ltac1 ltac1val:(or_elim') l.
 Ltac2 thunkleft := fun l => apply_ltac1 ltac1val:(left) l.
 Ltac2 thunkright := fun l => apply_ltac1 ltac1val:(right) l.
 Ltac2 thunkelimnat := fun l => apply_ltac1 ltac1val:(elim_nat) l.
+Ltac2 thunkweaken := fun l => apply_ltac1 ltac1val:(weaken) l.
 
 Ltac2 trigs () :=
   [(thunksplit, trigger_and_intro, "split"); 
@@ -70,7 +75,8 @@ Ltac2 trigs () :=
   (thunkorelim, trigger_or_elim, "or_elim");
   (thunkandelim, trigger_and_elim2, "and_elim");
   (thunkleft, trigger_left, "left");
-  (thunkright, trigger_right, "right")].
+  (thunkright, trigger_right, "right");
+  (thunkweaken, trigger_weaken, "weaken")].
 
 Ltac2 thunks () := 
 [(thunksplit, "split"); 
@@ -80,7 +86,8 @@ Ltac2 thunks () :=
 (thunkorelim, "or_elim");
 (thunkandelim, "and_elim"); 
 (thunkleft, "left"); 
-(thunkright, "right")].
+(thunkright, "right");
+(thunkweaken, "weaken")].
 
 Ltac2 trigs2 () :=
 [(trigger_and_intro);
@@ -90,7 +97,8 @@ Ltac2 trigs2 () :=
  (trigger_or_elim);
  (trigger_and_elim2);
  (trigger_left);
- (trigger_right)].
+ (trigger_right);
+ (trigger_weaken)].
 
 Ltac2 run (t : constr list -> unit) (l : constr list) := 
 t l.
@@ -186,6 +194,7 @@ Ltac2 rec orchestrator_ck_aux
     | [], [] => ()
     | trig :: trigs', (tac, name) :: tacs' => 
          let it := interpret_trigger_ck (cg.(state)) trig in
+         let _ := print_interpreted_trigger it in 
          match it with
           | None => let _ := (Message.print (Message.concat 
              (Message.of_string "The following tactic was not triggered: ") (Message.of_string name))) in 
@@ -216,12 +225,13 @@ Ltac2 rec orchestrator_ck_aux
         end
   end.
 
-Ltac2 rec orchestrator_ck trigs tacs trigtacs :=
+Ltac2 rec orchestrator_ck n trigs tacs trigtacs :=
+  if Int.equal n 0 then () else
   let g := Control.goal () in
   let hyps := Control.hyps () in
   let cg := { state := (hyps, Some g) } in 
   orchestrator_ck_aux cg trigs tacs trigtacs ; 
-  Control.enter (fun () => orchestrator_ck trigs tacs trigtacs).
+  Control.enter (fun () => orchestrator_ck (Int.sub n 1) trigs tacs trigtacs).
 
 (* Tactics with no arguments : 
 
@@ -236,7 +246,7 @@ on the goal, the hypotheses etc.) + add trakt in it *)
 
 Tactic Notation "orchestrator" := ltac2:(orchestrator ()).
 
-Tactic Notation "orchestrator_ck" := ltac2:(orchestrator_ck (trigs2 ()) (thunks ()) {trs := []}).
+Tactic Notation "orchestrator_ck" := ltac2:(orchestrator_ck 100 (trigs2 ()) (thunks ()) {trs := []}).
 
 Section tests.
 
@@ -262,6 +272,14 @@ Restart.
 Time orchestrator_ck.
 (* Finished transaction in 0.003 secs (0.003u,0.s) (successful) *)
 Qed.
+
+Goal (forall (A B C D : Prop), A \/ B \/ C \/ D -> D \/ C \/ B \/ A).
+Time orchestrator. 
+Restart.
+Time orchestrator_ck.
+Abort. 
+
+
 
 End tests.
 
