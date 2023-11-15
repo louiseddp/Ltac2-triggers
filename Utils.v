@@ -26,6 +26,20 @@ or_elim' A B.
   * intro Hb. right. left. assumption.
 Qed.
 
+(** and_elim **) 
+
+Ltac and_elim A B :=
+match goal with
+| H : A /\ B |- _ => 
+let H1 := fresh in assert (H1 : A) by apply H ;
+let H2 := fresh in assert (H2 : B) by apply H
+| _ => idtac
+end.
+
+Goal forall (A B : Prop), A /\ B -> False.
+Proof.
+intros A B H. and_elim A B. Abort.
+
 (** Utilities **)
 
 Ltac2 third_arg_equal (x : 'a*'b*'c) (y : 'a*'b*'c) (eq : 'c -> 'c -> bool) :=

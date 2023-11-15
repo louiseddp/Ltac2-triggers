@@ -12,6 +12,9 @@ Ltac elim_nat :=
 (** Triggers for tactics **)
 
 Ltac2 trigger_and_intro := TIs TGoal (TAnd tDiscard tDiscard).
+Ltac2 trigger_and_elim := TIs TSomeHyp (TAnd tDiscard tDiscard). (* FIXME: the argument is 
+the hypothesis *) 
+Ltac2 trigger_and_elim2 := TIs TSomeHyp (TAnd (TAny true) (TAny true)).
 Ltac2 trigger_axiom := TIs TGoal (TVar TSomeHyp FNothing).
 Ltac2 trigger_intro := TIs TGoal (TArr (TAny false) (TAny false)).
 Ltac2 trigger_or_elim := TIs TSomeHyp (TOr tMetavar tMetavar).
@@ -53,6 +56,7 @@ Ltac2 Type Thunk :=
 Ltac2 thunksplit := fun l => apply_ltac1 ltac1val:(split) l.
 Ltac2 thunkassumption := fun l => apply_ltac1 ltac1val:(assumption) l.
 Ltac2 thunkintro := fun l => apply_ltac1 ltac1val:(intro) l.
+Ltac2 thunkandelim := fun l => apply_ltac1 ltac1val:(and_elim) l.
 Ltac2 thunkorelim := fun l => apply_ltac1 ltac1val:(or_elim') l.
 Ltac2 thunkleft := fun l => apply_ltac1 ltac1val:(left) l.
 Ltac2 thunkright := fun l => apply_ltac1 ltac1val:(right) l.
@@ -64,15 +68,17 @@ Ltac2 trigs () :=
   (thunkelimnat, trigger_elim_nat (), "elim_nat");
   (thunkassumption, trigger_axiom, "assumption");
   (thunkorelim, trigger_or_elim, "or_elim");
+  (thunkandelim, trigger_and_elim2, "and_elim");
   (thunkleft, trigger_left, "left");
   (thunkright, trigger_right, "right")].
 
 Ltac2 thunks () := 
 [(thunksplit, "split"); 
 (thunkintro, "intro") ; 
-(thunkelimnat, "elim_nat"); 
+(thunkelimnat, "elim_nat");
 (thunkassumption, "assumption"); 
 (thunkorelim, "or_elim");
+(thunkandelim, "and_elim"); 
 (thunkleft, "left"); 
 (thunkright, "right")].
 
@@ -82,6 +88,7 @@ Ltac2 trigs2 () :=
  (trigger_elim_nat ());
  (trigger_axiom);
  (trigger_or_elim);
+ (trigger_and_elim2);
  (trigger_left);
  (trigger_right)].
 
@@ -173,23 +180,22 @@ Ltac2 rec orchestrator_ck_aux
   trigs (* triggers *)
   tacs (* tactics => should have same length as triggers *)
   trigtacs (* triggered tactics, pair between a name and a tactic *) :=
-  Printer.print_state (cg.(state)) ;
-  let interp_trigs := interpret_triggers_ck (cg.(state)) trigs in 
-  match interp_trigs, tacs with
+  match trigs, tacs with
     | [], _ :: _ => Utils.fail "you forgot to specify a trigger for a or several tactics"
     | _ :: _, [] => Utils.fail "you have more triggers than tactics"
     | [], [] => ()
-    | it :: its, (tac, name) :: tacs' =>
+    | trig :: trigs', (tac, name) :: tacs' => 
+         let it := interpret_trigger_ck (cg.(state)) trig in
          match it with
           | None => let _ := (Message.print (Message.concat 
              (Message.of_string "The following tactic was not triggered: ") (Message.of_string name))) in 
-             orchestrator_ck_aux cg (List.tl trigs) tacs' trigtacs
+             orchestrator_ck_aux cg trigs' tacs' trigtacs
           | Some l => 
             if Bool.and (Bool.neg (Int.equal (List.length l) 0)) 
               (List.mem trigger_tac_equal (name, l) (trigtacs.(trs))) then 
                let _ := Message.print (Message.concat 
               (Message.of_string name) (Message.of_string " was already applied")) in
-              orchestrator_ck_aux cg (List.tl trigs) tacs' trigtacs
+              orchestrator_ck_aux cg trigs' tacs' trigtacs
             else 
               (run tac l ;
               Message.print (Message.concat 
@@ -210,29 +216,12 @@ Ltac2 rec orchestrator_ck_aux
         end
   end.
 
-Ltac2 rec orchestrator_ck_aux2 trigs tacs trigtacs :=
+Ltac2 rec orchestrator_ck trigs tacs trigtacs :=
   let g := Control.goal () in
   let hyps := Control.hyps () in
   let cg := { state := (hyps, Some g) } in 
   orchestrator_ck_aux cg trigs tacs trigtacs ; 
-  match cg.(state) with
-    | ([], None) => Control.enter (fun () => orchestrator_ck_aux2 trigs tacs trigtacs) 
-    | _ => Control.enter (fun () => orchestrator_ck_aux2 trigs tacs trigtacs)
-  end.
-(* 
-Ltac2 rec orchestrator_ck_aux3 trigs tacs trigtacs :=
-  let trigtacs' := orchestrator_ck_aux2 trigs tacs trigtacs in
-  trigtacs.(trs) := trigtacs' ;
-  Control.enter (fun () => print_triggered_tacs (trigtacs.(trs))
-
-(*  orchestrator_ck_aux3 trigs tacs trigtacs *)).
-
-Ltac2 orchestrator_ck trigs tacs :=
-  let trigtacs := {trs := []} in 
-  orchestrator_ck_aux3 trigs tacs trigtacs. *)
-
-
-  
+  Control.enter (fun () => orchestrator_ck trigs tacs trigtacs).
 
 (* Tactics with no arguments : 
 
@@ -247,24 +236,32 @@ on the goal, the hypotheses etc.) + add trakt in it *)
 
 Tactic Notation "orchestrator" := ltac2:(orchestrator ()).
 
-Tactic Notation "orchestrator_ck" := ltac2:(orchestrator_ck_aux2 (trigs2 ()) (thunks ()) {trs := []}).
+Tactic Notation "orchestrator_ck" := ltac2:(orchestrator_ck (trigs2 ()) (thunks ()) {trs := []}).
 
 Section tests.
 
 Goal (forall (A B C D : Prop), nat -> A -> B -> C -> D -> (A /\ B /\ C /\ D)).
 Time orchestrator.
-(* Finished transaction in 0.01 secs (0.009u,0.s) (successful) *)
+(* Finished transaction in 0.015 secs (0.002u,0.012s) (successful) *)
 Restart.
 Time orchestrator_ck. Qed. 
-(* Finished transaction in 0.029 secs (0.029u,0.s) (successful) *)
-
-
+(* Finished transaction in 0.015 secs (0.006u,0.008s) (successful) *)
 
 Goal (forall (A B : Prop), A \/ B -> B \/ A).
-orchestrator. assumption.
+Time orchestrator.
+(* Finished transaction in 0.014 secs (0.005u,0.008s) (successful) *)
 Restart.
-timeout 7 orchestrator_ck.
- Qed.
+Time orchestrator_ck.
+(* Finished transaction in 0.014 secs (0.006u,0.007s) (successful) *)
+Qed.
+
+Goal (forall (A B : Prop), A /\ B -> A \/ B).
+Time orchestrator.
+(* Finished transaction in 0.004 secs (0.004u,0.s) (successful) *)
+Restart.
+Time orchestrator_ck.
+(* Finished transaction in 0.003 secs (0.003u,0.s) (successful) *)
+Qed.
 
 End tests.
 

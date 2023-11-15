@@ -73,7 +73,7 @@ Ltac2 rec interpret_constr_with_trigger_form
          match fl with
           | FNothing => Some []
           | FType => Some tv
-          | FTerm => Some [get_hyp c] (* TODO focus problem *)
+          | FTerm => Some [get_hyp c]
          end
        else None
     | _, TAny b => if b then Some [constr_quoted_to_constr c] else Some []
@@ -98,6 +98,17 @@ Ltac2 rec interpret_constr_with_trigger_form
           | Some l1, Some l2 => Some (List.append l1 l2)
           | _ => None
         end
+    | _, TVar v fl => (* FIXME : when we reify the term too much eg: trigger assumption
+                      when the goal is a conjunction *)
+       let tv := interpret_trigger_var v in
+       let c' := (constr_quoted_to_constr c) in
+       if List.mem equal c' tv then 
+         match fl with
+          | FNothing => Some []
+          | FType => Some tv
+          | FTerm => Some [get_hyp c']
+         end
+       else None
     | _ => None
   end.
 
@@ -150,6 +161,17 @@ Ltac2 rec interpret_constr_with_trigger_form_ck
           | Some l1, Some l2 => Some (List.append l1 l2)
           | _ => None
         end
+    | _, TVar v fl => (* FIXME : when we reify the term too much eg: trigger assumption
+                      when the goal is a conjunction *)
+       let tv := interpret_trigger_var v in
+       let c' := (constr_quoted_to_constr c) in
+       if List.mem equal c' tv then 
+         match fl with
+          | FNothing => Some []
+          | FType => Some tv
+          | FTerm => Some [get_hyp c']
+         end
+       else None
     | _ => None
   end.
 
