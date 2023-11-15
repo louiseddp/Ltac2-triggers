@@ -1,5 +1,6 @@
 Require Import Utils.
 Require Import Trigger.
+Require Import Printer.
 From Ltac2 Require Import Ltac2.
 Set Default Proof Mode "Classic".
 
@@ -124,13 +125,13 @@ Ltac2 rec diff_hyps hs1 hs2 :=
 Ltac2 Type triggered_tactics :=
 { mutable trs : (string*(constr list)) list  }.
 
-Ltac2 (* mutable *) triggered_tactics : (string*(constr list)) list := [].
+Ltac2 triggered_tactics : (string*(constr list)) list := [].
 
 Ltac2 trigger_tac_equal (x: string*(constr list)) (y: string*(constr list)) :=
   match x, y with
     | (s1, l1), (s2, l2) => 
-       Bool.and (String.equal s1 s2) (List.equal Constr.equal l1 l2)
-  end. 
+       Bool.and (String.equal s1 s2) (List.equal Constr.equal l1 l2) 
+  end.
 
 
 Ltac2 orchestrator () :=
@@ -162,21 +163,17 @@ Ltac2 orchestrator () :=
 Ltac2 interpret_triggers_ck cg trigs :=
 List.map (interpret_trigger_ck cg) trigs.
 
-Ltac2 print_state_goal cg :=
-let cg' := cg.(state) in 
-let (hs, g) := cg' in 
-match g with
- | None => Message.print (Message.of_string "None")
- | Some foo => 
-Message.print (Message.of_constr foo) 
-end.
+(* Ltac2 Type triggered_tactics :=
+{ mutable trs : (string*(constr list)) list  }.*)
 
+(* Improvement l empty => not in the list of tac already triggered *)
 (* optimisation: do not reinterpret triggers when the tactic does nothing *)
 Ltac2 rec orchestrator_ck_aux
   cg (* Coq Goal or modified Coq Goal *)
   trigs (* triggers *)
   tacs (* tactics => should have same length as triggers *)
-  trigtacs (* triggered tactics, pair between a name and a tactic *) := 
+  trigtacs (* triggered tactics, pair between a name and a tactic *) :=
+  Printer.print_state (cg.(state)) ;
   let interp_trigs := interpret_triggers_ck (cg.(state)) trigs in 
   match interp_trigs, tacs with
     | [], _ :: _ => Utils.fail "you forgot to specify a trigger for a or several tactics"
@@ -186,15 +183,18 @@ Ltac2 rec orchestrator_ck_aux
          match it with
           | None => let _ := (Message.print (Message.concat 
              (Message.of_string "The following tactic was not triggered: ") (Message.of_string name))) in 
-             orchestrator_ck_aux cg (List.tl trigs) tacs' trigtacs (* TODO: memorize initial tacs to reuse it *)
+             orchestrator_ck_aux cg (List.tl trigs) tacs' trigtacs
           | Some l => 
             if Bool.and (Bool.neg (Int.equal (List.length l) 0)) 
-              (List.mem trigger_tac_equal (name, l) trigtacs) then 
-              let _ := Message.print (Message.concat 
+              (List.mem trigger_tac_equal (name, l) (trigtacs.(trs))) then 
+               let _ := Message.print (Message.concat 
               (Message.of_string name) (Message.of_string " was already applied")) in
               orchestrator_ck_aux cg (List.tl trigs) tacs' trigtacs
             else 
-              run tac l ;
+              (run tac l ;
+              Message.print (Message.concat 
+              (Message.of_string "Automatically applied ") (Message.of_string name)) ;
+              trigtacs.(trs) := (name, l) :: (trigtacs.(trs)) ;
               Control.enter (fun () =>
               let cg' := cg.(state) in
               let (hs1, g1) := cg' in
@@ -205,23 +205,32 @@ Ltac2 rec orchestrator_ck_aux
                 | None => None
                 | Some g1' => if Constr.equal g1' g2 then None else Some g2 
               end in
-              cg.(state) := (diff_hyps hs1 hs2, g3) ;        
-              let _ := (Message.print (Message.concat 
-              (Message.of_string "Automaticaly applied ") (Message.of_string name))) in
-              orchestrator_ck_aux cg trigs tacs ((name, l) :: trigtacs))
+              cg.(state) := (diff_hyps hs1 hs2, g3) ;      
+              orchestrator_ck_aux cg trigs tacs trigtacs))
         end
   end.
 
-
-Ltac2 rec orchestrator_ck trigs tacs :=
+Ltac2 rec orchestrator_ck_aux2 trigs tacs trigtacs :=
   let g := Control.goal () in
   let hyps := Control.hyps () in
-  let cg := { state := (hyps, Some g) } in
-  orchestrator_ck_aux cg trigs tacs [] ;
-  match (cg.(state)) with
-    | ([], None) => let _ := Message.print (Message.of_string "End of orchestrator !!!!") in ()
-    | _ => Control.enter (fun () => orchestrator_ck trigs tacs)
+  let cg := { state := (hyps, Some g) } in 
+  orchestrator_ck_aux cg trigs tacs trigtacs ; 
+  match cg.(state) with
+    | ([], None) => Control.enter (fun () => orchestrator_ck_aux2 trigs tacs trigtacs) 
+    | _ => Control.enter (fun () => orchestrator_ck_aux2 trigs tacs trigtacs)
   end.
+(* 
+Ltac2 rec orchestrator_ck_aux3 trigs tacs trigtacs :=
+  let trigtacs' := orchestrator_ck_aux2 trigs tacs trigtacs in
+  trigtacs.(trs) := trigtacs' ;
+  Control.enter (fun () => print_triggered_tacs (trigtacs.(trs))
+
+(*  orchestrator_ck_aux3 trigs tacs trigtacs *)).
+
+Ltac2 orchestrator_ck trigs tacs :=
+  let trigtacs := {trs := []} in 
+  orchestrator_ck_aux3 trigs tacs trigtacs. *)
+
 
   
 
@@ -238,7 +247,7 @@ on the goal, the hypotheses etc.) + add trakt in it *)
 
 Tactic Notation "orchestrator" := ltac2:(orchestrator ()).
 
-Tactic Notation "orchestrator_ck" := ltac2:(orchestrator_ck (trigs2 ()) (thunks ())).
+Tactic Notation "orchestrator_ck" := ltac2:(orchestrator_ck_aux2 (trigs2 ()) (thunks ()) {trs := []}).
 
 Section tests.
 
@@ -246,15 +255,15 @@ Goal (forall (A B C D : Prop), nat -> A -> B -> C -> D -> (A /\ B /\ C /\ D)).
 Time orchestrator.
 (* Finished transaction in 0.01 secs (0.009u,0.s) (successful) *)
 Restart.
-Time orchestrator_ck.
+Time orchestrator_ck. Qed. 
 (* Finished transaction in 0.029 secs (0.029u,0.s) (successful) *)
-Qed.
+
 
 
 Goal (forall (A B : Prop), A \/ B -> B \/ A).
 orchestrator. assumption.
 Restart.
-orchestrator_ck.
+timeout 7 orchestrator_ck.
  Qed.
 
 End tests.

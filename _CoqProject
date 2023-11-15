@@ -2,5 +2,6 @@
 
 Utils.v
 Trigger.v
+Printer.v
 Thunks.v
 
