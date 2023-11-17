@@ -1,6 +1,8 @@
 Require Import List.
+Require Import Lia.
 Import ListNotations.
 Require Import Bool.
+Require Import PeanoNat.
 (* A small attempt to formalize the necessary conditions 
 the orchestrator should meet, and to look for a suitable order *)
 
@@ -583,28 +585,167 @@ eapply prepare_steps_length2.
 Defined.
 
 Definition example_input1 :=
-{| Transfos := [(HypsSensitive, ChangesHyps); (GoalSensitive, ChangesAll)];
+{| Transfos := [(GoalSensitive, ChangesHyps); (GoalSensitive, ChangesAll)];
    CG := {| Hs := [[false; false]; [false; false]; [false; false]]; 
             G := [false; false] ; 
             samelength := eq_refl |};
    inv := eq_refl |}.
 
-Compute (onestep_fuel 1 example_input1).
+Compute (onestep_fuel 0 example_input1).
 
-(* 
-TODO add a ChangeHyp? 
-Assumptions about the transformations
+(** Fuel for all transformations **) 
 
-Avoid infinite loops in our formalization :
-- the alterations ChangesHyps triggered by hypotheses 
-can be applied only a finite number of time (n times)
-- the alterations ChangesAll can be applied only a finite 
-number of time (m times)
-- the alterations ChangesGoal triggered by the goal can
-be applied only a finite number of time (j times ) 
-- the generative hypotheses which are triggered by hypotheses 
-can be applied only a finite number of time (k times)
 
-==> we need a version of onestep with some fuel 
+(* 1st integer : the number of the transformation
+2nd integer : the remaining fuel she has 
 *)
+
+Inductive nat_inf :=
+| Nat : nat -> nat_inf
+| Infinity : nat_inf.
+
+Definition fuel := list nat_inf.
+
+Record input_fuel := mkInputFuel
+{ In : input;
+  Fuel : fuel
+}.
+
+(* Returns the index of the first transformation 
+that could be applied *)
+
+Fixpoint first_with_fuel_aux (f : fuel) (n1 : nat) : option nat :=
+  match f with
+    | [] => None 
+    | n2 :: fs => 
+      match n2 with
+        | Infinity => Some n1
+        | Nat 0 => first_with_fuel_aux fs (S n1)
+        | Nat (S n3) => Some n1
+      end
+  end.
+
+Lemma first_with_fuel_le f : 
+forall n n', first_with_fuel_aux f n = Some n' -> n' >= n.
+Proof.
+induction f as [ | x f IHf] ; intros n n'.
+  - destruct n as [ | n]; intro H ; inversion H.
+  - destruct x as [ [ | x] | ]; simpl in *.
+    * specialize (IHf (S n)). specialize (IHf n').
+intro H. assert (H1 : n' >= S n). apply IHf.
+assumption. unfold ">=" in *. apply le_S_n.
+assert (H2 : n' <= S n'). apply Nat.le_succ_diag_r.
+eapply Nat.le_trans. apply H1. apply H2. 
+    * intro H. injection H. intro H2.
+subst. unfold ">=". constructor.
+    * intro H. injection H. intro H2.
+subst. unfold ">=". constructor.
+Qed.
+
+Fixpoint first_transfo_applied_fuel_aux (n : nat) (f: fuel) (inp : input) (structarg : nat) :=
+  match structarg with
+    | 0 => None
+    | S structarg' => 
+        let opt := first_with_fuel_aux f n in
+        match opt with
+          | None => None
+          | Some n' => 
+              let tr := nth n' (Transfos inp) (AllSensitive, ChangesAll) in
+                match check_trigger tr n' (CG inp) with
+                  | None => 
+                      let f' := List.skipn (S n') f in
+                      first_transfo_applied_fuel_aux (S n') f' inp structarg'
+                  | Some cg' => Some (tr, cg')
+                end
+          end
+     end.
+
+Print list_ind.
+Lemma list_length_ind (A : Type) (P : list A -> Prop) :
+P [] -> (forall (l : list A), 
+((forall (l' : list A), length l' < length l -> P l') -> P l)) -> 
+forall l, P l.
+Proof.
+intros H H1 l.
+induction l as [ | x xs IHxs].
+- assumption.
+- specialize (H1 (x::xs)). Admitted.
+
+Definition first_transfo_applied_fuel f inp :=
+  let structarg := length f in
+  first_transfo_applied_fuel_aux 0 f inp structarg.
+ 
+Lemma never_run_out_of_fuel_aux : 
+forall f inp tr cg k,
+(exists n, first_transfo_applied_fuel_aux k f inp n = Some (tr, cg)) ->
+(forall leng, leng > length f -> 
+first_transfo_applied_fuel_aux k f inp leng = Some (tr, cg)).
+Proof.
+intro f.
+apply list_length_ind with (P := 
+fun f => forall inp tr cg k,
+(exists n, first_transfo_applied_fuel_aux k f inp n = Some (tr, cg)) ->
+(forall leng, leng > length f -> first_transfo_applied_fuel_aux k f inp leng = Some (tr, cg))).
+  - intros inp tr cg k H. destruct H as [n Hn]. simpl in Hn.
+destruct n ; inversion Hn.
+  - intros l H. intros inp tr cg k Hn leng Hleng. destruct Hn as [n Hn].
+destruct leng as [ | len] eqn:E.
+     * simpl in *. inversion Hleng.
+     * simpl in *. destruct (first_with_fuel_aux l k) as [n1 | ] eqn:E'.
+        + destruct (check_trigger (nth n1 (Transfos inp) 
+(AllSensitive, ChangesAll)) n1 (CG inp)) eqn:F.
+apply f_equal. destruct n. inversion Hn. simpl in Hn.
+rewrite E' in Hn. rewrite F in Hn. inversion Hn; subst.
+reflexivity.
+destruct n. inversion Hn. simpl in Hn.
+rewrite E' in Hn. rewrite F in Hn.
+destruct l as [ | x l']; inversion E.
+simpl in *. inversion E'. simpl in *. 
+destruct x as [ [ | x'] | ] eqn:G.
+specialize (H (skipn n1 l')).
+assert (H2 : first_transfo_applied_fuel_aux (S n1) (skipn n1 l') inp
+      (length (skipn n1 l')) = Some (tr, cg) ->
+first_transfo_applied_fuel_aux (S n1) (skipn n1 l') inp len =
+Some (tr, cg)). intro H'.
+eapply H. 
+assert (Hn1 : n1 >= (S k)). apply first_with_fuel_le in E'.
+apply E'. assert (Hnle : n1 >= 1). lia.
+destruct n1 as [ | n1'] eqn:En1. lia. simpl.
+destruct l'. lia. simpl.
+destruct n1'. simpl ; lia. 
+pose proof (Hskip := skipn_length).
+specialize (Hskip nat_inf (S n1') l').
+lia. exists n. assumption. inversion H0.
+pose proof (Hskip := skipn_length). 
+specialize (Hskip nat_inf n1 l').
+lia. apply H2. eapply H.
+pose proof (Hskip := skipn_length). 
+specialize (Hskip nat_inf n1 l'). lia. 
+exists (length (skipn n1 l')). 
+apply H. pose proof (Hskip := skipn_length). 
+specialize (Hskip nat_inf n1 l'). lia. 
+
+ exists n. assumption.
+admit. eapply H. admit. exists n. assumption. admit.
+ + destruct n. simpl in Hn. inversion Hn.
+simpl in Hn. rewrite E' in Hn. inversion Hn.
+
+
+
+Fixpoint onestep_input_fuel (inp : input_fuel) : option input :=
+  match (Fuel inp) with
+    | [] => None 
+    | (n1, n2) :: ns =>
+      match n2 with
+        | Infinity => onestep inp
+        | Nat n3 => 
+          match n3 with
+            | 0 => 
+              let inp' := block_trigger n1 inp in
+              onestep_input_fuel {| In := inp' ; Fuel := ns |}
+            | S n4 => 
+          end
+      end
+    end.
+
 
