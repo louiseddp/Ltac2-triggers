@@ -661,6 +661,20 @@ Fixpoint first_transfo_applied_fuel_aux (n : nat) (f: fuel) (inp : input) (struc
      end.
 
 Print list_ind.
+
+Lemma list_length_ind_aux (A : Type) (P : list A -> Prop) :
+(forall l', (forall l, length l < length l' -> P l) -> P l') -> 
+(forall (l' l : list A), length l' < length l -> P l').
+Proof.
+intros H l l' H1.
+generalize dependent l.
+induction l' as [ | x' l' IHl']; intros l.
+- intros H2. inversion H2. 
+- intros H2. simpl in H2. 
+assert (Heq : length l = length l' \/ length l < length l') 
+by lia. destruct Heq as [ Heq1 | Heq2]. apply H. rewrite Heq1.
+apply IHl'. apply IHl'. assumption. Qed. 
+
 Lemma list_length_ind (A : Type) (P : list A -> Prop) :
 P [] -> (forall (l : list A), 
 ((forall (l' : list A), length l' < length l -> P l') -> P l)) -> 
@@ -668,8 +682,10 @@ forall l, P l.
 Proof.
 intros H H1 l.
 induction l as [ | x xs IHxs].
-- assumption.
-- specialize (H1 (x::xs)). Admitted.
+- assumption. 
+- pose proof (H2 := list_length_ind_aux).
+apply H2 with (x :: x :: xs). assumption.
+simpl. lia. Qed.
 
 Definition first_transfo_applied_fuel f inp :=
   let structarg := length f in
@@ -678,22 +694,23 @@ Definition first_transfo_applied_fuel f inp :=
 Lemma never_run_out_of_fuel_aux : 
 forall f inp tr cg k,
 (exists n, first_transfo_applied_fuel_aux k f inp n = Some (tr, cg)) ->
-(forall leng, leng > length f -> 
+(forall leng, leng >= length f -> 
 first_transfo_applied_fuel_aux k f inp leng = Some (tr, cg)).
 Proof.
 intro f.
 apply list_length_ind with (P := 
 fun f => forall inp tr cg k,
 (exists n, first_transfo_applied_fuel_aux k f inp n = Some (tr, cg)) ->
-(forall leng, leng > length f -> first_transfo_applied_fuel_aux k f inp leng = Some (tr, cg))).
+(forall leng, leng >= length f -> first_transfo_applied_fuel_aux k f inp leng = Some (tr, cg))).
   - intros inp tr cg k H. destruct H as [n Hn]. simpl in Hn.
 destruct n ; inversion Hn.
   - intros l H. intros inp tr cg k Hn leng Hleng. destruct Hn as [n Hn].
-destruct leng as [ | len] eqn:E.
-     * simpl in *. inversion Hleng.
+destruct (length l) as [ | len] eqn:E.
+     * simpl in *. apply length_zero_iff_nil in E. subst. destruct n ; inversion  Hn. 
      * simpl in *. destruct (first_with_fuel_aux l k) as [n1 | ] eqn:E'.
         + destruct (check_trigger (nth n1 (Transfos inp) 
-(AllSensitive, ChangesAll)) n1 (CG inp)) eqn:F.
+(AllSensitive, ChangesAll)) n1 (CG inp)) eqn:F. destruct leng as [ | leng'].
+simpl. inversion Hleng. simpl. rewrite E'. rewrite F.
 apply f_equal. destruct n. inversion Hn. simpl in Hn.
 rewrite E' in Hn. rewrite F in Hn. inversion Hn; subst.
 reflexivity.
@@ -702,35 +719,58 @@ rewrite E' in Hn. rewrite F in Hn.
 destruct l as [ | x l']; inversion E.
 simpl in *. inversion E'. simpl in *. 
 destruct x as [ [ | x'] | ] eqn:G.
-specialize (H (skipn n1 l')).
-assert (H2 : first_transfo_applied_fuel_aux (S n1) (skipn n1 l') inp
-      (length (skipn n1 l')) = Some (tr, cg) ->
+assert (Hskip0 : length (skipn n1 l') < S (length l')) by 
+(pose proof (Hskip := skipn_length);
+specialize (Hskip nat_inf n1 l');
+lia). 
+assert (H' : forall (inp : input) (tr : transfo) (cg : CoqGoal) (k : nat),
+(exists n : nat, first_transfo_applied_fuel_aux k (skipn n1 l') inp n =
+Some (tr, cg)) ->
+forall leng : nat,
+leng >= length (skipn n1 l') ->
+first_transfo_applied_fuel_aux k (skipn n1 l') inp leng =
+Some (tr, cg)). apply H. lia. clear H.
+assert (H2' : first_transfo_applied_fuel_aux (S n1) (skipn n1 l') inp
+(length (skipn n1 l')) = Some (tr, cg) ->
 first_transfo_applied_fuel_aux (S n1) (skipn n1 l') inp len =
-Some (tr, cg)). intro H'.
-eapply H. 
+Some (tr, cg)). intro H''.
+eapply H'. exists n. assumption.
 assert (Hn1 : n1 >= (S k)). apply first_with_fuel_le in E'.
 apply E'. assert (Hnle : n1 >= 1). lia.
-destruct n1 as [ | n1'] eqn:En1. lia. simpl.
-destruct l'. lia. simpl.
-destruct n1'. simpl ; lia. 
-pose proof (Hskip := skipn_length).
-specialize (Hskip nat_inf (S n1') l').
-lia. exists n. assumption. inversion H0.
+destruct n1 as [ | n1']. lia. 
 pose proof (Hskip := skipn_length). 
-specialize (Hskip nat_inf n1 l').
-lia. apply H2. eapply H.
+specialize (Hskip nat_inf n1' l'). lia. destruct leng as [ | leng].
+inversion Hleng. simpl in *. rewrite E'.
+rewrite F. inversion E. apply H'. exists n.
+assumption.
+assert (Hlen' : len >= length (skipn n1 l')) by lia.
+lia. destruct leng as [ | leng].
+inversion Hleng. simpl in *. inversion E'; subst.
+rewrite F. eapply H. 
+pose proof (Hskip := skipn_length). 
+specialize (Hskip nat_inf n1 l'). lia. exists n. assumption. 
+assert (Hskip0 : length (skipn n1 l') <= (length l')) by 
+(pose proof (Hskip := skipn_length);
+specialize (Hskip nat_inf n1 l');
+lia). lia. simpl. destruct leng as [ | leng].
+inversion Hleng. simpl in *. inversion H2; subst. rewrite F.
+apply H.
+pose proof (Hskip := skipn_length). 
+specialize (Hskip nat_inf n1 l'). lia.
+exists n. assumption. 
 pose proof (Hskip := skipn_length). 
 specialize (Hskip nat_inf n1 l'). lia. 
-exists (length (skipn n1 l')). 
-apply H. pose proof (Hskip := skipn_length). 
-specialize (Hskip nat_inf n1 l'). lia. 
-
- exists n. assumption.
-admit. eapply H. admit. exists n. assumption. admit.
  + destruct n. simpl in Hn. inversion Hn.
 simpl in Hn. rewrite E' in Hn. inversion Hn.
+Qed.
 
-
+Lemma never_run_out_of_fuel : 
+forall f inp tr cg,
+(exists n, first_transfo_applied_fuel_aux 0 f inp n = Some (tr, cg)) ->
+first_transfo_applied_fuel f inp = Some (tr, cg).
+Proof.
+unfold first_transfo_applied_fuel. intros.
+eapply never_run_out_of_fuel_aux. assumption. lia. Qed.
 
 Fixpoint onestep_input_fuel (inp : input_fuel) : option input :=
   match (Fuel inp) with
