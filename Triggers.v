@@ -1,6 +1,8 @@
 From Ltac2 Require Import Ltac2.
 From Ltac2 Require Import Init.
 From Ltac2 Require Import Constr.
+From Ltac2 Require Import Std.
+From Ltac2 Require Import Env.
 Import Unsafe.
 Set Default Proof Mode "Classic".
 
@@ -19,15 +21,15 @@ Ltac2 Type trigger_sort :=
 and does not handle universes, native arrays, integers, 
 projections or floats *)
 Ltac2 Type rec trigger_term := [
-| TVar (string, flag_arg) (* local variable or section variable *)
+| TVar (string option, flag_arg) (* local variable or section variable *)
 | TSort (trigger_sort) (* simplification of universes *)
 | TProd (trigger_term, trigger_term)
 | TLambda (trigger_term, trigger_term)
 | TLetIn (trigger_term, trigger_term, trigger_term)
 | TApp (trigger_term, trigger_term)
-| TConstant (string)
-| TInd (string)
-| TConstructor (string)
+| TConstant (string option, flag_arg)
+| TInd (string option, flag_arg)
+| TConstructor (string option, flag_arg)
 | TCase (trigger_term list)
 | TFix (trigger_term, trigger_term)
 | TCoFix (trigger_term, trigger_term)
@@ -77,26 +79,9 @@ free variables produces TODO, and some triggers cannot have arguments *)
 
 
 (* Ltac2 Type kind := [
-| Rel (int)
-| Var (ident)
-| Meta (meta)
-| Evar (evar, constr array)
-| Sort (sort)
-| Cast (constr, cast, constr)
-| Prod (binder, constr)
-| Lambda (binder, constr)
-| LetIn (binder, constr, constr)
-| App (constr, constr array)
-| Constant (constant, instance)
-| Ind (inductive, instance)
-| Constructor (constructor, instance)
 | Case (case, constr, case_invert, constr, constr array)
 | Fix (int array, int, binder array, constr array)
 | CoFix (int, binder array, constr array)
-| Proj (projection, constr)
-| Uint63 (uint63)
-| Float (float)
-| Array (instance, constr array, constr, constr)
 ]. *)
 
 Ltac2 curry_app (c : constr) (ca : constr array) :=
@@ -107,6 +92,37 @@ Ltac2 curry_app (c : constr) (ca : constr array) :=
       | x :: xs => tac_rec (make (App c (Array.of_list [x]))) xs
     end
   in tac_rec c cl. 
+
+Ltac2 ref_equal_upto_univs (r1 : reference) (r2 : reference) :=
+  match r1, r2 with
+    | VarRef id1, VarRef id2 => Ident.equal id1 id2
+    | ConstRef c1, ConstRef c2 => 
+        let t1 := instantiate r1 in
+        let t2 := instantiate r2 in 
+        equal t1 t2
+    | IndRef _, IndRef _ =>
+        let t1 := instantiate r1 in
+        let t2 := instantiate r2 in 
+        equal t1 t2
+    | ConstructRef _, ConstructRef _ => 
+        let t1 := instantiate r1 in
+        let t2 := instantiate r2 in 
+        equal t1 t2
+    | _ => false
+  end.
+
+Ltac2 matching_ref (o : string option) (r : reference) :=
+  match o with
+    | Some s =>
+        let o' := Ident.of_string s in
+          match o' with
+            | None => false
+            | Some id =>
+                let refs := expand [id] in
+                List.exist (ref_equal_upto_univs r) refs
+          end
+    | None => true
+  end.
 
 Ltac2 rec interpret_constr_with_trigger_term
  cg (c : constr) (tte : trigger_term) : constr list option:=
@@ -123,18 +139,27 @@ the variable would escape its scope. We can only use their type, or discard them
     | Rel _, TAny Flag_unneeded => Some []
     | Rel _, TAny Flag_term => None (* We prevent using a Rel k as argument *)
 (* Local (or section) variables *)
-    | Var id, TVar s fl => 
-        match Ident.of_string s with
-          | Some id' =>
-              if Ident.equal id id' then
-                match fl with
-                  | Flag_term => Some [c]
-                  | Flag_type => Some [type c]
-                  | Flag_unneeded => None
-                end
-              else None
-          | None => None
-        end
+    | Var id, TVar o fl => 
+        match o with
+          | Some s =>
+              match Ident.of_string s with
+                | Some id' =>
+                    if Ident.equal id id' then
+                      match fl with
+                        | Flag_term => Some [c]
+                        | Flag_type => Some [type c]
+                        | Flag_unneeded => Some []
+                      end
+                    else None
+                | None => None
+              end
+          | None => 
+              match fl with
+                | Flag_term => Some [c]
+                | Flag_type => Some [type c]
+                | Flag_unneeded => Some []
+              end
+          end
 (* Sorts: we do not want to deal with universes, as we are afraid 
 this may introduce difficulties which are unrelated to our main goal, 
 but we want to distinguish between Prop, Set and Type_i, i > 1 *)
@@ -187,7 +212,7 @@ but we want to distinguish between Prop, Set and Type_i, i > 1 *)
                   end
             | None => None
           end
-(* Application case : Sme adjustments are made to be sure 
+(* Application case : Some adjustments are made to be sure 
 that we have binary apps on both sides *)  
     | App c ca, TApp tte1 tte2 => 
        if Int.le (Array.length ca) 1 then
@@ -204,6 +229,32 @@ that we have binary apps on both sides *)
           end
        else 
         let c' := curry_app c ca in interpret_constr_with_trigger_term cg c' tte
+(* Constant, inductives, constructors : only monomorphic universes in order to simplify 
+the interpretation of our triggers *)
+    | Constant cst _, TConstant o fl =>
+        if matching_ref o (ConstRef cst) then 
+          match fl with
+            | Flag_term => Some [c]
+            | Flag_type => Some [type c]
+            | Flag_unneeded => Some []
+          end
+        else None
+    | Ind ind _, TInd o fl =>
+        if matching_ref o (IndRef ind) then 
+          match fl with
+            | Flag_term => Some [c]
+            | Flag_type => Some [type c]
+            | Flag_unneeded => Some []
+          end
+        else None
+    | Constructor cstr _, TConstructor o fl =>
+        if matching_ref o (ConstructRef cstr) then 
+          match fl with
+            | Flag_term => Some [c]
+            | Flag_type => Some [type c]
+            | Flag_unneeded => Some []
+          end
+        else None
     | _, _ => None
   end.
 
