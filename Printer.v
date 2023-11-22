@@ -1,7 +1,17 @@
 Require Import Utils.
 Require Import Trigger.
 From Ltac2 Require Import Ltac2.
+From Ltac2 Require Import Printf.
 Require Import Ltac2.Message.
+
+Ltac2 print_case (c: constr) :=
+  match Constr.Unsafe.kind c with
+    | Constr.Unsafe.Case _ c1 _ c2 ca =>  printf "%t" c1 ; printf "%t" c2 ; Array.iter (fun x => printf "%t" x) ca
+    | _ => ()
+  end.
+
+(* Ltac2 Eval (print_case '(match 1 as t return 
+match t with | 0 => Type | S _ => nat end with | 0 => Prop | S x => x end)). *)
 
 Ltac2 rec concat_list (l : message list) :=
   match l with
