@@ -660,8 +660,6 @@ Fixpoint first_transfo_applied_fuel_aux (n : nat) (f: fuel) (inp : input) (struc
           end
      end.
 
-Print list_ind.
-
 Lemma list_length_ind_aux (A : Type) (P : list A -> Prop) :
 (forall l', (forall l, length l < length l' -> P l) -> P l') -> 
 (forall (l' l : list A), length l' < length l -> P l').
@@ -770,22 +768,83 @@ forall f inp tr cg,
 first_transfo_applied_fuel f inp = Some (tr, cg).
 Proof.
 unfold first_transfo_applied_fuel. intros.
-eapply never_run_out_of_fuel_aux. assumption. lia. Qed.
+eapply never_run_out_of_fuel_aux. assumption. lia. Qed. 
 
-Fixpoint onestep_input_fuel (inp : input_fuel) : option input :=
-  match (Fuel inp) with
-    | [] => None 
-    | (n1, n2) :: ns =>
-      match n2 with
-        | Infinity => onestep inp
-        | Nat n3 => 
-          match n3 with
-            | 0 => 
-              let inp' := block_trigger n1 inp in
-              onestep_input_fuel {| In := inp' ; Fuel := ns |}
-            | S n4 => 
-          end
-      end
-    end.
+Definition decrease_fuel (f : fuel) (n : nat) :=
+  let x := nth n f (Nat 0) in
+  let x' := 
+    match x with
+      | Nat 0 => Nat 0
+      | Nat (S m) => Nat m
+      | Infinity => Infinity
+    end in
+  let l1 := List.firstn (n - 1) f in
+  let l2 := List.skipn (n - 1) f in
+  l1 ++ [x'] ++ l2.
+
+Lemma first_transfo_applied_fuel_length_goal :
+forall (f : fuel) n1 n2 inp,
+  match first_transfo_applied_fuel_aux n1 f inp n2 with
+  | Some (_, cg') => length (G cg') = length (G (CG inp))
+  | None => True
+  end.
+Proof. 
+intro f ; 
+apply (list_length_ind nat_inf (fun f => 
+forall n1 n2 inp,
+  match first_transfo_applied_fuel_aux n1 f inp n2 with
+  | Some (_, cg') => length (G cg') = length (G (CG inp))
+  | None => True
+  end)).
+intros n1 n2 inp. destruct n2 as [ | n2]; exact I.
+intros l H n1 n2 inp; destruct n2 as [ | n2]; destruct inp as (trs, cg, inv); simpl in *.
+1: exact I.
+destruct (first_with_fuel_aux l n1) as [ n | ] eqn:E. 2: exact I.
+destruct (check_trigger (nth n trs (AllSensitive, ChangesAll)) n cg) as [ cg' | ] eqn:E'.
+pose proof (H0 := check_trigger_length).
+apply H0 in E'. symmetry in E'. assumption.
+eapply H. destruct l as [ | x l]. inversion E. simpl. 
+pose proof (H0 := skipn_length). specialize (H0 _ n l). lia.
+Qed.
+
+Lemma onestep_fuel_length inp :
+let inp' := prepare (In inp) in
+  match first_transfo_applied_fuel (Fuel inp) inp' with
+    | Some (tr, cg) =>
+      let cg' := apply tr cg in length (G cg') = length (Transfos (In inp))
+    | None => True
+  end.
+Proof.
+pose proof (H0 :=  first_transfo_applied_fuel_length_goal).
+intros inp'.
+destruct (first_transfo_applied_fuel (Fuel inp) inp') as [ (tr, cg) |] eqn:E.
+- intros cg'. pose proof (H1 := prepare_length).
+unfold first_transfo_applied_fuel in E. specialize (H0 (Fuel inp) 0 (length (Fuel inp)) inp').
+rewrite E in H0. unfold inp' in H0. rewrite <- H1.
+destruct (prepare (In inp)) as (trs', c, inv').
+simpl in *. rewrite <- inv'. pose proof (H2 :=  apply_length). 
+specialize (H2 cg tr). unfold cg'. rewrite <- H2. assumption.
+- exact I. Qed.
+
+Lemma onestep_fuel_length2 :
+forall inp (inp' : input) (tr : transfo) (cg cg' : CoqGoal),
+inp' = prepare (In inp) ->
+first_transfo_applied_fuel (Fuel inp) inp' = Some (tr, cg) ->
+cg' = apply tr cg -> length (G cg') = length (Transfos inp').
+Proof.
+intros inp inp' tr cg cg' H1 H2 H3.
+pose proof (H0 := onestep_fuel_length).
+specialize (H0 inp). rewrite H1 in H2. simpl in H0. rewrite H2 in H0.
+subst. assumption. Qed. 
+
+Definition onestep_input_fuel (inp : input_fuel) : option input_fuel.
+Proof.
+pose (inp' := prepare (In inp)).
+destruct (first_transfo_applied_fuel (Fuel inp) inp') as [ (tr, cg) | ] eqn:E.
+refine (let n := find (Transfos inp') tr in
+          Some {| In := {| Transfos := Transfos inp' ; CG := apply tr cg ; inv := onestep_fuel_length2 inp
+inp' tr cg (apply tr cg) eq_refl _ _ |} ; 
+          Fuel := decrease_fuel (Fuel inp) n |}). assumption. reflexivity. exact None. Defined.
+
 
 
