@@ -65,3 +65,7 @@ let _ := print (of_constr g) in
 let _ := print (of_string "The hypotheses are") in
 let hyps := Control.hyps () in
 print_hyps hyps.
+
+  
+Ltac2 print_closed_subterms c :=
+let lc := closed_subterms c in List.iter (fun x => printf "%t" x) lc.

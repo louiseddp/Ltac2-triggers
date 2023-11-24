@@ -517,7 +517,7 @@ Ltac2 interpret_trigger_pred cg a p :=
     end.
 
 Ltac2 interpret_trigger_contains_aux cg (c : constr) (tf : trigger_term) :=
-  let lc := closed_subterms c in
+  let lc := subterms c in
     let rec tac_aux cg lc tf :=
     match lc with 
       | [] => None
@@ -576,6 +576,9 @@ Ltac2 rec interpret_trigger cg (t : trigger) :=
           | None => Some []
         end
   end.
+
+(* TODO : massive improvement if the subterms are not computed each time. 
+We should list the arguments that the tactic should not use *)
 
 
 
