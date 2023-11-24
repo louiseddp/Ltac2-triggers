@@ -7,6 +7,8 @@ From Ltac2 Require Import Printf.
 Import Unsafe.
 Set Default Proof Mode "Classic".
 
+Ltac2 Type exn ::= [ NotClosed(string) ].
+
 Ltac2 Type flag_arg :=
   [ Flag_type | Flag_term | Flag_unneeded ].
 
@@ -18,12 +20,13 @@ Ltac2 Type trigger_var :=
 Ltac2 Type trigger_sort :=
 [ TProp | TSet | TBigType].
 
-(* warning: does not mention free variables, 
-and does not handle universes, native arrays, integers, 
+(* warning:
+does not handle universe hierarchy, native arrays, integers, 
 projections or floats *)
 Ltac2 Type rec trigger_term := [
 
 (* follows the constr type *)
+| TRel (int)
 | TVar (string option, flag_arg) (* local variable or section variable *)
 | TSort (trigger_sort) (* simplification of universes *)
 | TProd (trigger_term, trigger_term)
@@ -128,17 +131,6 @@ Ltac2 destruct_or (c : constr) :=
     | _ => None
   end.
 
-(* In this new version, the comparison between constrs and triggers may not be
-sufficiently accurate because 
-free variables should be matched against TAnys, and some triggers cannot have arguments *)
-
-
-(* Ltac2 Type kind := [
-| Case (case, constr, case_invert, constr, constr array)
-| Fix (int array, int, binder array, constr array)
-| CoFix (int, binder array, constr array)
-]. *)
-
 Ltac2 curry_app (c : constr) (ca : constr array) :=
   let cl := Array.to_list ca in
   let rec tac_rec c cl := 
@@ -227,12 +219,7 @@ Ltac2 rec interpret_trigger_term_with_constr
         end
 (* De Brujin indexes: cannot be given as arguments to the tactic triggered. Otherwise 
 the variable would escape its scope. We can only use their type, or discard them. *)
-    | Rel _, TType c' b => 
-        let ty := type c in
-        if equal c c' then
-          if b then Some [c]
-        else Some []
-        else None
+    | Rel n1, TRel n2 => if Int.equal n1 n2 then Some [] else None 
     | Rel _, TAny Flag_type => Some [type c]
     | Rel _, TAny Flag_unneeded => Some []
     | Rel _, TAny Flag_term => None (* We prevent using a Rel k as argument *)
@@ -412,12 +399,14 @@ the interpretation of our triggers *)
           end
     | _, TTerm c' b => 
       if equal c c' then 
-        if b then Some [c']
+        if b then 
+          if is_closed c then Some [c] else Control.throw (NotClosed "the interpretation cannot return an open term")
         else Some [] 
       else None
     | _, TType t b => 
-        if equal (Constr.type c) t then
-          if b then Some [t]
+        if equal (type c) t then
+          if b then 
+            if is_closed t then Some [t] else Control.throw (NotClosed "the interpretation cannot return an open term")
           else Some []  
         else None
     | _, TTrigVar v fl => 
@@ -433,8 +422,10 @@ the interpretation of our triggers *)
         end
     | _, TAny fl => 
       match fl with
-        | Flag_term => Some [c]
-        | Flag_type => Some [type c]
+        | Flag_term => if is_closed c then Some [c] 
+            else Control.throw (NotClosed "the interpretation cannot return an open term")
+        | Flag_type => let ty := type c in if is_closed ty then Some [ty]
+            else Control.throw (NotClosed "the interpretation cannot return an open term")
         | Flag_unneeded => Some []
       end
     | _, _ => None
