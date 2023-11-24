@@ -569,7 +569,7 @@ Ltac2 rec interpret_trigger cg (t : trigger) :=
             | None => None
           end
       end
-(* warning: not works only with no arguments *)
+(* warning: "not" works only with no arguments *)
     | TNot t' => 
         match interpret_trigger cg t with
           | Some _ => None

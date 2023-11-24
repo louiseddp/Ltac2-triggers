@@ -1,0 +1,6 @@
+test : tests/tests.v
+	$(SHOW)COQC $<
+	$(HIDE)$(TIMER) $(COQC) $(COQDEBUG) $(TIMING_ARG) $(COQFLAGS) $(COQLIBS) $< $(TIMING_EXTRA)
+
+clean:: 
+	rm -f *.glob *.vo *.vok *.vos tests/*.glob tests/*.vo tests/*.vok 
