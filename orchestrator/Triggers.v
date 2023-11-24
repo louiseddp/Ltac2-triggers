@@ -3,7 +3,6 @@ From Ltac2 Require Import Init.
 From Ltac2 Require Import Constr.
 From Ltac2 Require Import Std.
 From Ltac2 Require Import Env.
-From Ltac2 Require Import Printf.
 Import Unsafe.
 Set Default Proof Mode "Classic".
 
@@ -429,6 +428,153 @@ the interpretation of our triggers *)
         | Flag_unneeded => Some []
       end
     | _, _ => None
+  end.
+
+Ltac2 interpret_trigger_is cg a b :=
+  let a' := interpret_trigger_var cg a in
+    match a' with
+      | Hyps hyps =>
+          let rec aux cg h b := 
+            match hyps with
+              | [] => None
+              | (x, y, z) :: xs => 
+                  let opt := interpret_trigger_term_with_constr cg z b in 
+                    match opt with
+                      | None => aux cg xs b
+                      | Some l => Some l
+                    end
+            end in aux cg hyps b
+      | Goal None => None
+      | Goal (Some x) => interpret_trigger_term_with_constr cg x b
+    end.
+
+Ltac2 rec subterms (c : constr) : constr list :=
+  match kind c with
+    | Rel _ => [c]
+    | Var _ => [c]
+    | Meta _ => [c]
+    | Evar _ ca =>
+        let l := Array.to_list ca in
+        let res := List.map subterms l in
+        let res' := List.flatten res in List.append [c] res'
+    | Sort _ => [c]
+    | Cast c1 _ c2 => List.append [c] (List.append (subterms c1) (subterms c2))
+    | Prod bd c2 =>
+        let c1 := Binder.type bd in List.append [c] (List.append (subterms c1) (subterms c2))
+    | Lambda bd c2 =>
+        let c1 := Binder.type bd in List.append [c] (List.append (subterms c1) (subterms c2))
+    | LetIn bd c2 c3 =>
+        let c1 := Binder.type bd in List.append [c] (List.append (subterms c1) (List.append (subterms c2) (subterms c3)))
+    | App c1 ca => 
+        let l := Array.to_list ca in
+        let res := List.map subterms l in
+        let res' := List.flatten res in 
+        List.append [c] (List.append (subterms c1) res')
+    | Constant _ _ => [c]
+    | Ind _ _ => [c]
+    | Constructor _ _ => [c]
+    | Case _ c1 _ c2 ca => 
+        let l := Array.to_list ca in
+        let res := List.map subterms l in
+        let res' := List.flatten res in 
+        List.append [c] (List.append (List.append (subterms c1) (subterms c2)) res')
+    | Fix _ _ ba ca => 
+        let l := Array.to_list ca in
+        let res := List.map subterms l in
+        let res' := List.flatten res in 
+        let l' := Array.to_list ba in
+        let res1 := List.map (fun x => subterms (Binder.type x)) l' in
+        let res1' := List.flatten res1 in
+        List.append [c] (List.append res' res1')
+    | CoFix _ ba ca =>
+        let l := Array.to_list ca in
+        let res := List.map subterms l in
+        let res' := List.flatten res in 
+        let l' := Array.to_list ba in
+        let res1 := List.map (fun x => subterms (Binder.type x)) l' in
+        let res1' := List.flatten res1 in
+        List.append [c] (List.append res' res1')
+    | Proj _ c1 => List.append [c] (subterms c1)
+    | Uint63 _ => [c]
+    | Float _ => [c]
+    | Array _ ca c1 c2 => 
+        let l := Array.to_list ca in
+        let res := List.map subterms l in
+        let res' := List.flatten res in 
+        List.append [c] (List.append (List.append (subterms c1) (subterms c2)) res')
+  end.
+
+Ltac2 closed_subterms c := List.filter is_closed (subterms c).
+
+
+(* warning: no arguments for this tactic *)
+Ltac2 interpret_trigger_pred cg a p :=
+  let a' := interpret_trigger_var cg a in
+    match a' with
+      | Hyps hyps => if List.exist (fun (x, y, z) => p z) hyps then Some [] else None
+      | Goal None => None
+      | Goal (Some x) => if p x then Some [] else None
+    end.
+
+Ltac2 interpret_trigger_contains_aux cg (c : constr) (tf : trigger_term) :=
+  let lc := closed_subterms c in
+    let rec tac_aux cg lc tf :=
+    match lc with 
+      | [] => None
+      | x :: xs => 
+        match interpret_trigger_term_with_constr cg x tf with
+          | None => tac_aux cg xs tf
+          | Some success => Some success
+        end
+    end in tac_aux cg lc tf.
+
+Ltac2 interpret_trigger_contains cg tv tf := 
+  let v := interpret_trigger_var cg tv in
+    match v with
+      | Hyps hyps => 
+          let rec aux cg h b := 
+            match hyps with
+              | [] => None
+              | (x, y, z) :: xs => 
+                  let opt := interpret_trigger_contains_aux cg z b in 
+                    match opt with
+                      | None => aux cg xs b
+                      | Some l => Some l
+                    end
+             end in aux cg hyps tf
+      | Goal None => None
+      | Goal (Some g) => interpret_trigger_contains_aux cg g tf
+    end.
+
+Ltac2 rec interpret_trigger cg (t : trigger) :=
+  match t with
+    | TIs a b => interpret_trigger_is cg a b
+    | TPred a f => interpret_trigger_pred cg a f
+    | TContains a b => interpret_trigger_contains cg a b
+    | TConj t1 t2 => 
+      match interpret_trigger cg t1 with
+        | Some res => 
+          match interpret_trigger cg t2 with
+            | Some res' => Some res' 
+            | None => None
+          end
+        | None => None
+      end              
+    | TDisj t1 t2 => 
+      match interpret_trigger cg t1 with 
+        | Some res => Some res
+        | None => 
+          match interpret_trigger cg t2 with
+            | Some res' => Some res'
+            | None => None
+          end
+      end
+(* warning: not works only with no arguments *)
+    | TNot t' => 
+        match interpret_trigger cg t with
+          | Some _ => None
+          | None => Some []
+        end
   end.
 
 
