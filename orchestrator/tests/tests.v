@@ -9,9 +9,12 @@ Ltac2 initial_state () :=
   let g := Control.goal () in
   (hyps, Some g).
 
+Ltac2 initial_computed_subterms () :=
+  { subs := ([], None)}.
+
 Ltac2 test_trigger (t: trigger) :=
   let init := initial_state () in
-  let res := interpret_trigger init t in
+  let res := interpret_trigger init (initial_computed_subterms ()) t in
   print_interpreted_trigger res.
 
 (** Test De Brujin indexes, eq and anonymous functions **) 
@@ -36,6 +39,7 @@ fix length (l : list A) : nat := match l with
                                  | _ :: l' => S (length l')
                                  end).
 test_trigger (TContains TGoal (TConstant None Flag_type)).
+test_trigger (TContains TGoal (TConstant (Some "length") Flag_type)).
 test_trigger (TContains TGoal (TFix tDiscard tDiscard)).
 test_trigger (TContains TGoal (TFix tDiscard tDiscard)).
 test_trigger (TContains TGoal (TCase tDiscard tDiscard (Some [TTerm '0 false; tDiscard]))).

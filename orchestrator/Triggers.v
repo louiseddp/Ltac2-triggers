@@ -74,6 +74,7 @@ Ltac2 Type hyps_or_goal := [
   | Hyps ((ident*constr option*constr) list) 
   | Goal (constr option)].
 
+
 Ltac2 interpret_trigger_var cg (tv: trigger_var) :=
   let (hyps, g) := cg in
     match tv with
@@ -516,19 +517,35 @@ Ltac2 interpret_trigger_pred cg a p :=
       | Goal (Some x) => if p x then Some [] else None
     end.
 
-Ltac2 interpret_trigger_contains_aux cg (c : constr) (tf : trigger_term) :=
-  let lc := subterms c in
-    let rec tac_aux cg lc tf :=
+Ltac2 rec interpret_trigger_contains_aux cg (lc : constr list) (tf : trigger_term) :=
     match lc with 
       | [] => None
       | x :: xs => 
         match interpret_trigger_term_with_constr cg x tf with
-          | None => tac_aux cg xs tf
+          | None => interpret_trigger_contains_aux cg xs tf
           | Some success => Some success
         end
-    end in tac_aux cg lc tf.
+    end.
 
-Ltac2 interpret_trigger_contains cg tv tf := 
+Ltac2 Type subterms_coq_goal := { mutable subs : (ident*constr list) list * (constr list) option }.
+
+Ltac2 look_for_subterms_hyps (id : ident) (s : (ident*constr list) list * (constr list) option) :=
+  let (hyps, o) := s in
+  let rec aux id hyps :=
+    match hyps with
+      | [] => None
+      | (id', l) :: xs => 
+        if Ident.equal id id' then Some l else aux id xs
+    end in aux id hyps.
+
+Ltac2 look_for_subterms_goal (s : (ident*constr list) list * (constr list) option) :=
+  let (hyps, o) := s in
+    match o with
+      | None => None
+      | Some lc => Some lc
+    end.
+
+Ltac2 interpret_trigger_contains cg (scg : subterms_coq_goal) tv tf := 
   let v := interpret_trigger_var cg tv in
     match v with
       | Hyps hyps => 
@@ -536,42 +553,66 @@ Ltac2 interpret_trigger_contains cg tv tf :=
             match hyps with
               | [] => None
               | (x, y, z) :: xs => 
-                  let opt := interpret_trigger_contains_aux cg z b in 
-                    match opt with
-                      | None => aux cg xs b
-                      | Some l => Some l
+                  match look_for_subterms_hyps x (scg.(subs)) with
+                    | None =>
+                        let lc := subterms z in
+                        let (hyps, o) := scg.(subs) in
+                        let _ := scg.(subs) := ((x, lc)::hyps, o) in
+                        let opt := interpret_trigger_contains_aux cg lc b in 
+                          match opt with
+                            | None => aux cg xs b
+                            | Some l => Some l
+                        end
+                    | Some lc => 
+                        let opt := interpret_trigger_contains_aux cg lc b in 
+                          match opt with
+                            | None => aux cg xs b
+                            | Some l => Some l
+                        end
                     end
              end in aux cg hyps tf
       | Goal None => None
-      | Goal (Some g) => interpret_trigger_contains_aux cg g tf
+      | Goal (Some g) =>
+          match look_for_subterms_goal (scg.(subs)) with
+            | None =>
+              let lc := subterms g in
+              let (hyps, o) := scg.(subs) in
+              let _ := scg.(subs) := (hyps, Some lc) in
+              let opt := interpret_trigger_contains_aux cg lc tf in 
+                match opt with
+                  | None => None
+                  | Some l => Some l
+                end
+            | Some lc => interpret_trigger_contains_aux cg lc tf
+          end
     end.
 
-Ltac2 rec interpret_trigger cg (t : trigger) :=
+Ltac2 rec interpret_trigger cg scg (t : trigger) :=
   match t with
     | TIs a b => interpret_trigger_is cg a b
     | TPred a f => interpret_trigger_pred cg a f
-    | TContains a b => interpret_trigger_contains cg a b
+    | TContains a b => interpret_trigger_contains cg scg a b
     | TConj t1 t2 => 
-      match interpret_trigger cg t1 with
+      match interpret_trigger cg scg t1 with
         | Some res => 
-          match interpret_trigger cg t2 with
+          match interpret_trigger cg scg t2 with
             | Some res' => Some res' 
             | None => None
           end
         | None => None
       end              
     | TDisj t1 t2 => 
-      match interpret_trigger cg t1 with 
+      match interpret_trigger cg scg t1 with 
         | Some res => Some res
         | None => 
-          match interpret_trigger cg t2 with
+          match interpret_trigger cg scg t2 with
             | Some res' => Some res'
             | None => None
           end
       end
 (* warning: "not" works only with no arguments *)
     | TNot t' => 
-        match interpret_trigger cg t with
+        match interpret_trigger cg scg t with
           | Some _ => None
           | None => Some []
         end
