@@ -618,8 +618,7 @@ Ltac2 rec interpret_trigger cg scg (t : trigger) :=
         end
   end.
 
-(* TODO : massive improvement if the subterms are not computed each time. 
-We should list the arguments that the tactic should not use *)
+(* TODO : We should list the arguments that the tactic should not use *)
 
 
 
