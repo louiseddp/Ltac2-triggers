@@ -7,88 +7,51 @@ Require Import Printer.
 Require Import Triggers.
 
 Ltac myapply2 A B := split ; [apply A | apply B].
-
 Ltac myexact t := exact t.
-Ltac mysplit := split.
 
 
-(** Reification of Ltac1 tactics *)
+(** We need to use a trick here: there
+is no function in Ltac2's API which returns 
+a Ltac1 value given its ident. We always need the absolute path
+and we cannot look at several paths because the function [Ltac1.ref] 
+throws an uncatchable exception whenever the path is not the good one.
+Consequently, all the Orchestrator's tactics should be in one file, or the user has to 
+provide the absolute path herself, which is not convenient at all.
+Using elpi avoid these difficulties, even if the user needs
+to create its own copy of all the tactic which take arguments *)
 
-Ltac2 currify (tac : t) (l : t list) :=
-  Ltac1.apply tac l run.
+From elpi Require Import elpi.
 
-Ltac2 constr_to_tacval (l : constr list) :=
-  List.map (fun x => of_constr x) l.
+Elpi Tactic apply_ltac1.
+Elpi Accumulate lp:{{
 
-Ltac2 apply_ltac1 (tac : t) (l : constr list) := 
-currify tac (constr_to_tacval l).
+  solve ((goal _ _ _ _ [str S| H]) as G) GS :-
+    coq.ltac.call S H G GS.
+
+}}.
+Elpi Typecheck.
 
 Ltac2 get_opt o := match o with None => Control.throw Not_found | Some x => x end.
 
-(** [run] runs a Ltac1 tactic *) 
+(** [run] runs a Ltac1 tactic given its ident and its arguments (provided as a string) *) 
 
-Ltac2 run (id : ident) (l : constr list) :=
-let tac := ref [ident:(Orchestrator) ; ident:(Tactics); id] in
-let l := List.map of_constr l in
-let l := of_list l in
-ltac1:(tac l |- 
-let f := ltac2:(tac l |- 
-let l := to_list l in 
-let l := get_opt l in
-let l := List.map (fun x => get_opt (to_constr x)) l in
-apply_ltac1 tac l) in f tac l) tac l.
+Ltac2 run (s : string) (l : constr list) :=
+let id := Ident.of_string s in
+let id := of_ident (get_opt id) in
+let l := of_list (List.map of_constr l) in
+Ltac1.apply ltac1val:(fun s l => 
+  let id := s in elpi apply_ltac1 ltac_string:(id) ltac_term_list:(l)) [id; l] run.
 
-(*
-Ltac2 run2 (tac : t) (l : constr list) :=
-let l := List.map of_constr l in
-let l := of_list l in
-ltac1:(tac l |- 
-let f := ltac2:(tac l |- 
-let l := to_list l in 
-let l := get_opt l in
-let l := List.map (fun x => get_opt (to_constr x)) l in
-apply_ltac1 tac l) in f tac l) tac l.
- *)
-(* Ltac2 run (tac : t) (l : t) :=
-ltac1:(tac l |- 
-let x := tac in (** kind of "type cast": transforms [tac] into a tacvalue *)
-let f := ltac2:(tac l |- 
-let l := to_list l in 
-let l := get_opt l in
-let l := List.map (fun x => get_opt (to_constr x)) l in
-apply_ltac1 tac l) in f x l) tac l.
-
-Ltac2 run_list (tac : t) (l : constr list) :=
-let l := List.map of_constr l in
-let l := of_list l in
-ltac1:(tac l |- 
-let x := tac in (** kind of "type cast": transforms [tac] into a tacvalue *)
-let f := ltac2:(tac l |- 
-let l := to_list l in 
-let l := get_opt l in
-let l := List.map (fun x => get_opt (to_constr x)) l in
-apply_ltac1 tac l) in f x l) tac l. *)
-
-(* Tactic Notation (at level 0) "run" tactic(tac) "|" constr_list(l) := 
-let f := ltac2:(tac l |- run tac l) in f tac l.
-
-Ltac2 run_tacnot l := fun tac => 
-let l := List.map of_constr l in
-let l := of_list l in
-ltac1:(tac l |- let x := tac in run x | l) tac l.
-
-
-Set Default Proof Mode "Classic". *)
-Section tests. 
+Section tests.
 
 Goal (True /\ True) /\ (True -> True -> True /\ True).
 Proof.
-run ident:(mysplit) [].
-run ident:(mysplit) [].
-run ident:(myexact) ['I].
-run ident:(myexact) ['I].
+run "split" [].
+run "split" [].
+run "myexact" ['I].
+run "myexact" ['I].
 intros H1 H2.
-run ident:(myapply2) ['H1; 'H2].
+run "myapply2" ['H1; 'H2].
 Qed.
 
 End tests.
