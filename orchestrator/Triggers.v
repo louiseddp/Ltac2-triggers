@@ -68,6 +68,8 @@ Ltac2 Type rec trigger := [
   | TConj (trigger, trigger) (* two triggers need to be present at the same time *)
   | TDisj (trigger, trigger) (* one of the two triggers needs to be present *)
   | TNot (trigger) (* negation of a trigger *)
+  | TIsVar (trigger_var, trigger_term) (* interpreted as the first trigger variable which matches the term *)
+  | TContainsVar (trigger_var, trigger_term) (* interpreted as the first trigger variable which contains the term *)
   ].
 
 Ltac2 Type hyps_or_goal := [
@@ -616,6 +618,7 @@ Ltac2 rec interpret_trigger cg scg (t : trigger) :=
           | Some _ => None
           | None => Some []
         end
+    | _ => None (* TODO *)
   end.
 
 (* TODO : We should list the arguments that the tactic should not use *)

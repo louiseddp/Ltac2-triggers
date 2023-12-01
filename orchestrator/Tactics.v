@@ -1,6 +1,7 @@
 From Ltac2 Require Import Ltac2.
 From Ltac2 Require Import Ltac1.
 From Ltac2 Require Import Constr.
+From Ltac2 Require Import String.
 Require Import List.
 Import ListNotations.
 Require Import Printer.
@@ -47,13 +48,54 @@ Section tests.
 Goal (True /\ True) /\ (True -> True -> True /\ True).
 Proof.
 run "split" [].
-run "split" [].
+let str := "split" in run str [].
 run "myexact" ['I].
 run "myexact" ['I].
 intros H1 H2.
 run "myapply2" ['H1; 'H2].
 Qed.
 
-End tests.
+End tests. 
+
+(** Triggers for Sniper tactics *)
+
+
+Ltac2 trigger_definitions :=
+  TDisj (TContains TGoal (TConstant None Flag_term)) (TContains TSomeHyp (TConstant None Flag_term)).
+
+Ltac2 trigger_higher_order_equalities :=
+  TIsVar TSomeHyp (TEq (TProd tDiscard tDiscard) tDiscard tDiscard).
+
+Ltac2 trigger_fixpoints :=
+  TContainsVar TSomeHyp (TFix tDiscard tDiscard).
+
+Ltac2 trigger_pattern_matching :=
+  TContainsVar TSomeHyp (TCase tDiscard tDiscard None).
+
+Ltac2 trigger_polymorphism :=
+  TDisj (TIs TSomeHyp (TProd (TSort TSet) tDiscard)) (TIs TSomeHyp (TProd (TSort TBigType) tDiscard)).
+
+Ltac2 trigger_higher_order :=
+  TContainsVar TSomeHyp (TProd (TProd tDiscard tDiscard) tDiscard).
+
+Ltac2 trigger_algebraic_types :=
+  TDisj (TContains TGoal (TInd None Flag_term)) (TContains TSomeHyp (TInd None Flag_term)).
+
+Ltac2 trigger_generation_principle :=
+  TDisj (TContains TGoal (TInd None Flag_term)) (TContains TSomeHyp (TInd None Flag_term)).
+
+(** TODO Does this consider functions inside matches ?? *)
+Ltac2 trigger_anonymous_funs :=
+  TDisj (TContains TSomeHyp (TLambda tDiscard tDiscard)) (TContains TGoal (TLambda tDiscard tDiscard)).
+
+(** TODO A TNot is not interesting whenever all hypotheses are not considered !!! *)
+(* Ltac2 trigger_trakt_bool () :=
+  TNot (TIs TSomeHyp (TEq (TInd (Some "bool") Flag_unneeded) tDiscard tDiscard)). *)
+
+(* Ltac2 trigger_trakt_Z_bool := *)
+
+
+(** TODO : do we want a TContains which takes the contained element and uses it as an argument 
+for another trigger ?? **)
 
 
