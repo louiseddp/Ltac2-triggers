@@ -529,7 +529,7 @@ Ltac2 rec interpret_trigger_contains_aux cg (lc : constr list) (tf : trigger_ter
         end
     end.
 
-Ltac2 Type subterms_coq_goal := { mutable subs : (ident*constr list) list * (constr list) option }.
+Ltac2 Type subterms_coq_goal := { mutable subterms_coq_goal : (ident*constr list) list * (constr list) option }.
 
 Ltac2 look_for_subterms_hyps (id : ident) (s : (ident*constr list) list * (constr list) option) :=
   let (hyps, o) := s in
@@ -555,11 +555,11 @@ Ltac2 interpret_trigger_contains cg (scg : subterms_coq_goal) tv tf :=
             match hyps with
               | [] => None
               | (x, y, z) :: xs => 
-                  match look_for_subterms_hyps x (scg.(subs)) with
+                  match look_for_subterms_hyps x (scg.(subterms_coq_goal)) with
                     | None =>
                         let lc := subterms z in
-                        let (hyps, o) := scg.(subs) in
-                        let _ := scg.(subs) := ((x, lc)::hyps, o) in
+                        let (hyps, o) := scg.(subterms_coq_goal) in
+                        let _ := scg.(subterms_coq_goal) := ((x, lc)::hyps, o) in
                         let opt := interpret_trigger_contains_aux cg lc b in 
                           match opt with
                             | None => aux cg xs b
@@ -575,11 +575,11 @@ Ltac2 interpret_trigger_contains cg (scg : subterms_coq_goal) tv tf :=
              end in aux cg hyps tf
       | Goal None => None
       | Goal (Some g) =>
-          match look_for_subterms_goal (scg.(subs)) with
+          match look_for_subterms_goal (scg.(subterms_coq_goal)) with
             | None =>
               let lc := subterms g in
-              let (hyps, o) := scg.(subs) in
-              let _ := scg.(subs) := (hyps, Some lc) in
+              let (hyps, o) := scg.(subterms_coq_goal) in
+              let _ := scg.(subterms_coq_goal) := (hyps, Some lc) in
               let opt := interpret_trigger_contains_aux cg lc tf in 
                 match opt with
                   | None => None
