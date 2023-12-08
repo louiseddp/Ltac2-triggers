@@ -6,6 +6,10 @@ From Ltac2 Require Import Env.
 Import Unsafe.
 Set Default Proof Mode "Classic".
 
+Ltac2 fst (x : 'a*'b) := let (y, _) := x in y.
+
+Ltac2 snd (x : 'a*'b) := let (y, _) := x in y.
+
 Ltac2 Type exn ::= [ NotClosed(string) ].
 
 Ltac2 Type flag_arg :=
@@ -62,14 +66,12 @@ Ltac2 rec tApp_nary (tc : trigger_term) (ltc : trigger_term list) :=
   end.
 
 Ltac2 Type rec trigger := [
-  | TIs (trigger_var, trigger_term) 
+  | TIs (trigger_var, flag_arg, trigger_term) 
   | TPred (trigger_var, constr -> bool) (* the trigger_var should verify the user-defined Ltac2 predicate *)
-  | TContains (trigger_var, trigger_term)
+  | TContains (trigger_var, flag_arg, trigger_term)
   | TConj (trigger, trigger) (* two triggers need to be present at the same time *)
   | TDisj (trigger, trigger) (* one of the two triggers needs to be present *)
   | TNot (trigger) (* negation of a trigger *)
-  | TIsVar (trigger_var, trigger_term) (* interpreted as the first trigger variable which matches the term *)
-  | TContainsVar (trigger_var, trigger_term) (* interpreted as the first trigger variable which contains the term *)
   ].
 
 Ltac2 Type hyps_or_goal := [
@@ -444,11 +446,16 @@ Ltac2 interpret_trigger_is cg a b :=
                   let opt := interpret_trigger_term_with_constr cg z b in 
                     match opt with
                       | None => aux cg xs b
-                      | Some l => Some l
+                      | Some l => Some ([&x], l)
                     end
             end in aux cg hyps b
       | Goal None => None
-      | Goal (Some x) => interpret_trigger_term_with_constr cg x b
+      | Goal (Some x) => 
+          let opt := interpret_trigger_term_with_constr cg x b in 
+            match opt with
+              | None => None
+              | Some y => Some ([x], y)
+            end
     end.
 
 Ltac2 rec subterms (c : constr) : constr list :=
@@ -525,7 +532,7 @@ Ltac2 rec interpret_trigger_contains_aux cg (lc : constr list) (tf : trigger_ter
       | x :: xs => 
         match interpret_trigger_term_with_constr cg x tf with
           | None => interpret_trigger_contains_aux cg xs tf
-          | Some success => Some success
+          | Some success => Some ([x], success)
         end
     end.
 
@@ -589,11 +596,23 @@ Ltac2 interpret_trigger_contains cg (scg : subterms_coq_goal) tv tf :=
           end
     end.
 
-Ltac2 rec interpret_trigger cg scg (t : trigger) :=
+Ltac2 rec interpret_trigger cg scg (t : trigger) : constr list option :=
   match t with
-    | TIs a b => interpret_trigger_is cg a b
+    | TIs a Flag_unneeded b => Option.map snd (interpret_trigger_is cg a b)
+    | TIs a Flag_type b => 
+        match interpret_trigger_is cg a b with
+          | Some (x, _)  => Some [type (List.hd x)] (* warning: either a trigger var as argument, or a list of constr *)
+          | None => None
+        end
+    | TIs a Flag_term b => Option.map fst (interpret_trigger_is cg a b) (* warning: either a trigger var as argument, or a list of constr *)
     | TPred a f => interpret_trigger_pred cg a f
-    | TContains a b => interpret_trigger_contains cg scg a b
+    | TContains a Flag_unneeded b => Option.map snd (interpret_trigger_contains cg scg a b)
+    | TContains a Flag_type b =>
+        match interpret_trigger_contains cg scg a b with
+          | Some (x, _)  => Some [type (List.hd x)] (* warning: either a trigger var as argument, or a list of constr *)
+          | None => None
+        end
+    | TContains a Flag_term b => Option.map fst (interpret_trigger_contains cg scg a b)
     | TConj t1 t2 => 
       match interpret_trigger cg scg t1 with
         | Some res => 
@@ -618,10 +637,11 @@ Ltac2 rec interpret_trigger cg scg (t : trigger) :=
           | Some _ => None
           | None => Some []
         end
-    | _ => None (* TODO *)
   end.
 
 (* TODO : We should list the arguments that the tactic should not use *)
+(* TODO : improve the selection of args by designating their order (an integer) and an Ltac2 function f: constr -> constr.
+eg : (1, id) (1, type) etc *) 
 
 
 

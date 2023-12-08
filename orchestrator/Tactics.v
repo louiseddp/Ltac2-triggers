@@ -61,32 +61,36 @@ End tests.
 
 
 Ltac2 trigger_definitions :=
-  TDisj (TContains TGoal (TConstant None Flag_term)) (TContains TSomeHyp (TConstant None Flag_term)).
+  TDisj (TContains TGoal Flag_unneeded (TConstant None Flag_term)) (TContains TSomeHyp Flag_unneeded  (TConstant None Flag_term)).
 
 Ltac2 trigger_higher_order_equalities :=
-  TIsVar TSomeHyp (TEq (TProd tDiscard tDiscard) tDiscard tDiscard).
+  TIs TSomeHyp Flag_term (TEq (TProd tDiscard tDiscard) tDiscard tDiscard).
 
 Ltac2 trigger_fixpoints :=
-  TContainsVar TSomeHyp (TFix tDiscard tDiscard).
+  TContains TSomeHyp Flag_term (TFix tDiscard tDiscard).
 
 Ltac2 trigger_pattern_matching :=
-  TContainsVar TSomeHyp (TCase tDiscard tDiscard None).
+  TContains TSomeHyp Flag_term (TCase tDiscard tDiscard None).
 
 Ltac2 trigger_polymorphism :=
-  TDisj (TIs TSomeHyp (TProd (TSort TSet) tDiscard)) (TIs TSomeHyp (TProd (TSort TBigType) tDiscard)).
+  TDisj (TIs TSomeHyp Flag_unneeded  (TProd (TSort TSet) tDiscard)) (TIs TSomeHyp Flag_unneeded (TProd (TSort TBigType) tDiscard)).
 
 Ltac2 trigger_higher_order :=
-  TContainsVar TSomeHyp (TProd (TProd tDiscard tDiscard) tDiscard).
+  TContains TSomeHyp Flag_term (TProd (TProd tDiscard tDiscard) tDiscard).
 
 Ltac2 trigger_algebraic_types :=
-  TDisj (TContains TGoal (TInd None Flag_term)) (TContains TSomeHyp (TInd None Flag_term)).
+  TDisj (TContains TGoal Flag_unneeded (TInd None Flag_term)) (TContains TSomeHyp Flag_unneeded (TInd None Flag_term)).
 
 Ltac2 trigger_generation_principle :=
-  TDisj (TContains TGoal (TInd None Flag_term)) (TContains TSomeHyp (TInd None Flag_term)).
+  TDisj (TContains TGoal Flag_unneeded (TInd None Flag_term)) (TContains TSomeHyp Flag_unneeded (TInd None Flag_term)).
 
-(** TODO Does this consider functions inside matches ?? *)
+(** TODO 
+let r1 := interpret_trigger t1 in
+... t2 .. r1 ... 
+
+ ?? *)
 Ltac2 trigger_anonymous_funs :=
-  TDisj (TContains TSomeHyp (TLambda tDiscard tDiscard)) (TContains TGoal (TLambda tDiscard tDiscard)).
+  TDisj (TContains TSomeHyp Flag_unneeded (TLambda tDiscard tDiscard)) (TContains TGoal Flag_unneeded (TLambda tDiscard tDiscard)).
 
 (** TODO A TNot is not interesting whenever all hypotheses are not considered !!! *)
 (* Ltac2 trigger_trakt_bool () :=
@@ -94,8 +98,5 @@ Ltac2 trigger_anonymous_funs :=
 
 (* Ltac2 trigger_trakt_Z_bool := *)
 
-
-(** TODO : do we want a TContains which takes the contained element and uses it as an argument 
-for another trigger ?? **)
 
 

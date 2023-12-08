@@ -96,7 +96,7 @@ Ltac2 rec orchestrator_aux
                 | None => None
                 | Some g1' => if Constr.equal g1' g2 then None else Some g2 
               end in
-              cg.(cgstate) := (diff_hyps hs1 hs2, g3) ;     (* TODO: change scg *) 
+              cg.(cgstate) := (diff_hyps hs1 hs2, g3) ;     
               orchestrator_aux cg scg trigs tacs trigtacs))
         end
   end.
