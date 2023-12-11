@@ -61,40 +61,40 @@ End tests.
 
 
 Ltac2 trigger_definitions :=
-  TDisj (TContains TGoal Flag_unneeded (TConstant None Flag_term)) (TContains TSomeHyp Flag_unneeded  (TConstant None Flag_term)).
+  TDisj (TContains (TGoal, NotArg) (TConstant None NotArg)) (TContains (TSomeHyp, NotArg)  (TConstant None (Arg id))).
 
 Ltac2 trigger_higher_order_equalities :=
-  TIs TSomeHyp Flag_term (TEq (TProd tDiscard tDiscard) tDiscard tDiscard).
+  TIs (TSomeHyp, Arg id) (TEq (TProd tDiscard tDiscard NotArg) tDiscard tDiscard NotArg).
 
 Ltac2 trigger_fixpoints :=
-  TContains TSomeHyp Flag_term (TFix tDiscard tDiscard).
+  TContains (TSomeHyp, Arg id) (TFix tDiscard tDiscard NotArg).
 
 Ltac2 trigger_pattern_matching :=
-  TContains TSomeHyp Flag_term (TCase tDiscard tDiscard None).
+  TContains (TSomeHyp, Arg id) (TCase tDiscard tDiscard None NotArg).
 
 Ltac2 trigger_polymorphism :=
-  TDisj (TIs TSomeHyp Flag_unneeded  (TProd (TSort TSet) tDiscard)) (TIs TSomeHyp Flag_unneeded (TProd (TSort TBigType) tDiscard)).
+  TDisj (TIs (TSomeHyp, NotArg)  (TProd (TSort TSet NotArg) tDiscard NotArg)) (TIs (TSomeHyp, NotArg) (TProd (TSort TBigType NotArg) tDiscard NotArg)).
 
 Ltac2 trigger_higher_order :=
-  TContains TSomeHyp Flag_term (TProd (TProd tDiscard tDiscard) tDiscard).
+  TContains (TSomeHyp, Arg id) (TProd (TProd tDiscard tDiscard NotArg) tDiscard NotArg).
 
 Ltac2 trigger_algebraic_types :=
-  TDisj (TContains TGoal Flag_unneeded (TInd None Flag_term)) (TContains TSomeHyp Flag_unneeded (TInd None Flag_term)).
+  TDisj (TContains (TGoal, NotArg) (TInd None (Arg id))) (TContains (TSomeHyp, NotArg) (TInd None (Arg id))).
 
 Ltac2 trigger_generation_principle :=
-  TDisj (TContains TGoal Flag_unneeded (TInd None Flag_term)) (TContains TSomeHyp Flag_unneeded (TInd None Flag_term)).
+  TDisj (TContains (TGoal, NotArg) (TInd None (Arg id))) (TContains (TSomeHyp, NotArg) (TInd None (Arg id))).
 
-(** TODO 
-let r1 := interpret_trigger t1 in
-... t2 .. r1 ... 
+(* TODO transform the tnamed into a formula *)
+Ltac2 trigger_anonymous_funs () :=
+  TDisj (TBind (TContains (TSomeHyp, Arg id) (TLambda tDiscard tDiscard NotArg)) ["H"]
+  (TNot (TContains (TNamed "H", NotArg) (TCase tDiscard tDiscard None NotArg))))
+  (TConj (TContains (TGoal, NotArg) (TLambda tDiscard tDiscard NotArg))
+  (TNot (TContains (TGoal, NotArg) (TCase tDiscard tDiscard None NotArg)))).  
 
- ?? *)
-Ltac2 trigger_anonymous_funs :=
-  TDisj (TContains TSomeHyp Flag_unneeded (TLambda tDiscard tDiscard)) (TContains TGoal Flag_unneeded (TLambda tDiscard tDiscard)).
-
-(** TODO A TNot is not interesting whenever all hypotheses are not considered !!! *)
-(* Ltac2 trigger_trakt_bool () :=
-  TNot (TIs TSomeHyp (TEq (TInd (Some "bool") Flag_unneeded) tDiscard tDiscard)). *)
+(** warning A TNot is not interesting whenever all hypotheses are not considered !!! *)
+Ltac2 trigger_trakt_bool () :=
+  TBind (TNot (TIs (TSomeHyp, Arg id) (TEq (TInd (Some "bool") NotArg) tDiscard tDiscard NotArg))) ["H"]
+  (TIs (TNamed "H", NotArg) (TType 'Prop NotArg)).
 
 (* Ltac2 trigger_trakt_Z_bool := *)
 

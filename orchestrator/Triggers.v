@@ -9,14 +9,16 @@ Set Default Proof Mode "Classic".
 
 Ltac2 fail s := Control.backtrack_tactic_failure s.
 
+Ltac2 id (a : 'a) := a.
+
 Ltac2 fst (x : 'a*'b) := let (y, _) := x in y.
 
 Ltac2 snd (x : 'a*'b) := let (_, y) := x in y.
 
 Ltac2 Type exn ::= [ NotClosed(string) ].
 
-Ltac2 Type flag_arg :=
-  [ Flag_type | Flag_term | Flag_unneeded ].
+Ltac2 Type flag :=
+  [ Arg (constr -> constr) | NotArg ]. (* TODO add int as pos *)
 
 Ltac2 Type trigger_var := 
   [TGoal | TSomeHyp | TNamed (string) ].
@@ -37,46 +39,40 @@ projections or floats *)
 Ltac2 Type rec trigger_term := [
 
 (* follows the constr type *)
-| TRel (int)
-| TVar (string option, flag_arg) (* local variable or section variable *)
-| TSort (trigger_sort) (* simplification of universes *)
-| TProd (trigger_term, trigger_term)
-| TLambda (trigger_term, trigger_term)
-| TLetIn (trigger_term, trigger_term, trigger_term)
-| TApp (trigger_term, trigger_term)
-| TConstant (string option, flag_arg)
-| TInd (string option, flag_arg)
-| TConstructor (string option, flag_arg)
-| TCase (trigger_term, trigger_term, trigger_term list option) 
-| TFix (trigger_term, trigger_term)
-| TCoFix (trigger_term, trigger_term)
+| TRel (int, flag)
+| TVar (string option, flag) (* local variable or section variable *)
+| TSort (trigger_sort, flag) (* simplification of universes *)
+| TProd (trigger_term, trigger_term, flag)
+| TLambda (trigger_term, trigger_term, flag)
+| TLetIn (trigger_term, trigger_term, trigger_term, flag)
+| TApp (trigger_term, trigger_term, flag)
+| TConstant (string option, flag)
+| TInd (string option, flag)
+| TConstructor (string option, flag)
+| TCase (trigger_term, trigger_term, trigger_term list option, flag) 
+| TFix (trigger_term, trigger_term, flag)
+| TCoFix (trigger_term, trigger_term, flag)
 
 (* specific to triggers *)
-| TType (constr, bool)
-| TTerm (constr, bool)
-| TTrigVar (trigger_var, flag_arg)
-| TAny (flag_arg) 
+| TType (constr, flag)
+| TTerm (constr, flag)
+| TTrigVar (trigger_var, flag)
+| TAny (flag) 
 
 (* less fine-grained structure *)
-| TEq (trigger_term, trigger_term, trigger_term)
-| TAnd (trigger_term, trigger_term)
-| TOr (trigger_term, trigger_term)
+| TEq (trigger_term, trigger_term, trigger_term, flag)
+| TAnd (trigger_term, trigger_term, flag)
+| TOr (trigger_term, trigger_term, flag)
 ].
  
-Ltac2 tArg := TAny Flag_term.
-Ltac2 tArgType := TAny Flag_type.
-Ltac2 tDiscard := TAny Flag_unneeded.
-
-Ltac2 rec tApp_nary (tc : trigger_term) (ltc : trigger_term list) := 
-  match ltc with
-    | [] => tc
-    | x :: xs => tApp_nary (TApp tc x) xs
-  end.
+Ltac2 tArg := TAny (Arg id).
+Ltac2 tArgType := TAny (Arg type).
+Ltac2 tDiscard := TAny NotArg.
 
 Ltac2 Type rec trigger := [
-  | TIs (trigger_var, flag_arg, trigger_term) 
-  | TPred (trigger_var, constr -> bool) (* the trigger_var should verify the user-defined Ltac2 predicate *)
-  | TContains (trigger_var, flag_arg, trigger_term)
+  | TIs ((trigger_var*flag), trigger_term) 
+  | TPred ((trigger_var*flag), constr -> bool) (* the trigger_var should verify the user-defined Ltac2 predicate *)
+  | TContains ((trigger_var*flag), trigger_term)
   | TConj (trigger, trigger) (* two triggers need to be present at the same time *)
   | TDisj (trigger, trigger) (* one of the two triggers needs to be present *)
   | TNot (trigger) (* negation of a trigger *)
@@ -197,10 +193,22 @@ Ltac2 matching_ref (o : string option) (r : reference) :=
     | None => true
   end.
 
+Ltac2 interpret_flag (c : constr) (f : flag) :=
+  match f with
+    | Arg g => Some (g c)
+    | NotArg => None
+  end.
+
+Ltac2 cons_option (c : constr option) (l : constr list) :=
+  match c with
+    | Some c => c :: l
+    | None => l
+  end.
+
 Ltac2 rec interpret_trigger_term_with_constr
  cg env (c : constr) (tte : trigger_term) : constr list option:=
   match kind c, tte with
-    | App _ _, TEq tte1 tte2 tte3 => 
+    | App _ _, TEq tte1 tte2 tte3 fl => 
         match destruct_eq c with
           | Some (c1, c2, c3) => 
               match interpret_trigger_term_with_constr cg env c1 tte1 with
@@ -208,7 +216,7 @@ Ltac2 rec interpret_trigger_term_with_constr
                     match interpret_trigger_term_with_constr cg env c2 tte2 with
                       | Some l' => 
                           match interpret_trigger_term_with_constr cg env c3 tte3 with
-                            | Some l'' => Some (List.append (List.append l l') l'')
+                            | Some l'' => Some (cons_option (interpret_flag c fl) (List.append (List.append l l') l''))
                             | None => None
                           end
                       | None => None
@@ -217,26 +225,26 @@ Ltac2 rec interpret_trigger_term_with_constr
               end
           | None => None
         end
-    | App _ _, TAnd tte1 tte2 => 
+    | App _ _, TAnd tte1 tte2 fl => 
         match destruct_and c with
           | Some (c1, c2) =>
               match interpret_trigger_term_with_constr cg env c1 tte1 with
                 | Some l => 
                     match interpret_trigger_term_with_constr cg env c2 tte2 with
-                      | Some l' => Some (List.append l l')
+                      | Some l' => Some (cons_option (interpret_flag c fl) (List.append l l'))
                       | None => None
                     end
                 | None => None
               end
           | None => None
         end
-    | App _ _, TOr tte1 tte2 => 
+    | App _ _, TOr tte1 tte2 fl => 
         match destruct_or c with
           | Some (c1, c2) =>
               match interpret_trigger_term_with_constr cg env c1 tte1 with
                 | Some l => 
                     match interpret_trigger_term_with_constr cg env c2 tte2 with
-                      | Some l' => Some (List.append l l')
+                      | Some l' => Some (cons_option (interpret_flag c fl) (List.append l l'))
                       | None => None
                     end
                 | None => None
@@ -245,68 +253,55 @@ Ltac2 rec interpret_trigger_term_with_constr
         end
 (* De Brujin indexes: cannot be given as arguments to the tactic triggered. Otherwise 
 the variable would escape its scope. We can only use their type, or discard them. *)
-    | Rel n1, TRel n2 => if Int.equal n1 n2 then Some [] else None 
-    | Rel _, TAny Flag_type => Some [type c]
-    | Rel _, TAny Flag_unneeded => Some []
-    | Rel _, TAny Flag_term => None (* We prevent using a Rel k as argument *)
+    | Rel n1, TRel n2 fl => if Int.equal n1 n2 then Some (cons_option (interpret_flag c fl) []) else None 
 (* Local (or section) variables *)
     | Var id, TVar o fl => 
         match o with
           | Some s =>
               match Ident.of_string s with
                 | Some id' =>
-                    if Ident.equal id id' then
-                      match fl with
-                        | Flag_term => Some [c]
-                        | Flag_type => Some [type c]
-                        | Flag_unneeded => Some []
-                      end
+                    if Ident.equal id id' then Some (cons_option (interpret_flag c fl) [])
                     else None
                 | None => None
               end
-          | None => 
-              match fl with
-                | Flag_term => Some [c]
-                | Flag_type => Some [type c]
-                | Flag_unneeded => Some []
-              end
+          | None => Some (cons_option (interpret_flag c fl) [])
           end
 (* Sorts: we do not want to deal with universes, as we are afraid 
 this may introduce difficulties which are unrelated to our main goal, 
 but we want to distinguish between Prop, Set and Type_i, i > 1 *)
-    | Sort s, TSort ts =>
+    | Sort s, TSort ts fl =>
         match ts with
-          | TProp => if equal c 'Prop then Some [] else None
-          | TSet => if equal c 'Set then Some [] else None
+          | TProp => if equal c 'Prop then Some (cons_option (interpret_flag c fl) []) else None
+          | TSet => if equal c 'Set then Some (cons_option (interpret_flag c fl) []) else None
           | TBigType => 
             if Bool.and (equal c 'Type) (Bool.neg (equal c 'Set))
-            then Some [] else None
+            then Some (cons_option (interpret_flag c fl) []) else None
         end
-    | Prod bi t, TProd tte1 tte2 => 
+    | Prod bi t, TProd tte1 tte2 fl => 
         let ty := Binder.type bi in
         let res := interpret_trigger_term_with_constr cg env ty tte1 in
           match res with
             | Some l => 
                 let res' := interpret_trigger_term_with_constr cg env t tte2 in
                   match res' with
-                    | Some l' => Some (List.append l l')
+                    | Some l' => Some (cons_option (interpret_flag c fl) (List.append l l'))
                     | None => None
                   end
             | None => None
           end
-    | Lambda bi t, TLambda tte1 tte2 => 
+    | Lambda bi t, TLambda tte1 tte2 fl => 
         let ty := Binder.type bi in
         let res := interpret_trigger_term_with_constr cg env ty tte1 in
           match res with
             | Some l => 
                 let res' := interpret_trigger_term_with_constr cg env t tte2 in
                   match res' with
-                    | Some l' => Some (List.append l l')
+                    | Some l' => Some (cons_option (interpret_flag c fl) (List.append l l'))
                     | None => None
                   end
             | None => None
           end
-    | LetIn bi t t', TLetIn tte1 tte2 tte3 => 
+    | LetIn bi t t', TLetIn tte1 tte2 tte3 fl => 
         let ty := Binder.type bi in
         let res := interpret_trigger_term_with_constr cg env ty tte1 in
           match res with
@@ -316,7 +311,7 @@ but we want to distinguish between Prop, Set and Type_i, i > 1 *)
                     | Some l' => 
                         let res'' := interpret_trigger_term_with_constr cg env t' tte3 in
                           match res'' with
-                            | Some l'' => Some (List.append (List.append l l') l'')
+                            | Some l'' => Some (cons_option (interpret_flag c fl) (List.append (List.append l l') l''))
                             | None => None
                           end
                     | None => None
@@ -325,7 +320,7 @@ but we want to distinguish between Prop, Set and Type_i, i > 1 *)
           end
 (* Application case : Some adjustments are made to be sure 
 that we have binary apps on both sides *)  
-    | App c ca, TApp tte1 tte2 => 
+    | App c ca, TApp tte1 tte2 fl => 
        if Int.le (Array.length ca) 1 then
         let res := interpret_trigger_term_with_constr cg env c tte1 in
           match res with
@@ -333,7 +328,7 @@ that we have binary apps on both sides *)
                 let c' := Array.get ca 0 in
                 let res' := interpret_trigger_term_with_constr cg env c' tte2 in
                   match res' with
-                    | Some l' => Some (List.append l l')
+                    | Some l' => Some (cons_option (interpret_flag c fl) (List.append l l'))
                     | None => None
                   end
             | None => None
@@ -344,30 +339,15 @@ that we have binary apps on both sides *)
 only equalities up to universes in order to simplify 
 the interpretation of our triggers *)
     | Constant cst _, TConstant o fl =>
-        if matching_ref o (ConstRef cst) then 
-          match fl with
-            | Flag_term => Some [c]
-            | Flag_type => Some [type c]
-            | Flag_unneeded => Some []
-          end
+        if matching_ref o (ConstRef cst) then Some (cons_option (interpret_flag c fl) [])
         else None
     | Ind ind _, TInd o fl =>
-        if matching_ref o (IndRef ind) then 
-          match fl with
-            | Flag_term => Some [c]
-            | Flag_type => Some [type c]
-            | Flag_unneeded => Some []
-          end
+        if matching_ref o (IndRef ind) then Some (cons_option (interpret_flag c fl) [])
         else None
     | Constructor cstr _, TConstructor o fl =>
-        if matching_ref o (ConstructRef cstr) then 
-          match fl with
-            | Flag_term => Some [c]
-            | Flag_type => Some [type c]
-            | Flag_unneeded => Some []
-          end
+        if matching_ref o (ConstructRef cstr) then Some (cons_option (interpret_flag c fl) [])
         else None
-    | Case _ ty _ t ca, TCase tte1 tte2 o =>
+    | Case _ ty _ t ca, TCase tte1 tte2 o fl =>
        let res := interpret_trigger_term_with_constr cg env ty tte1 in
         match res with
           | Some l => 
@@ -390,70 +370,56 @@ the interpretation of our triggers *)
                               end 
                             in 
                               match aux branchs lc [] with
-                                | Some l'' => Some (List.append (List.append l l') l'')
+                                | Some l'' => Some (cons_option (interpret_flag c fl) (List.append (List.append l l') l''))
                                 | None => None
                               end
-                        | None => Some (List.append l l')
+                        | None => Some (cons_option (interpret_flag c fl) (List.append l l'))
                       end
                   | None => None
                 end
           | None => None
         end
-    | Fix _ nbmut binds ca, TFix tte1 tte2 => 
+    | Fix _ nbmut binds ca, TFix tte1 tte2 fl => 
         let ty := Binder.type (Array.get binds nbmut) in
         let res := interpret_trigger_term_with_constr cg env ty tte1 in
           match res with
             | Some l => 
                 let res' := interpret_trigger_term_with_constr cg env (Array.get ca nbmut) tte2 in
                   match res' with
-                    | Some l' => Some (List.append l l')
+                    | Some l' => Some (cons_option (interpret_flag c fl) (List.append l l'))
                     | None => None
                   end
             | None => None
           end
-    | CoFix nbmut binds ca, TCoFix tte1 tte2 =>
+    | CoFix nbmut binds ca, TCoFix tte1 tte2 fl =>
         let ty := Binder.type (Array.get binds nbmut) in
         let res := interpret_trigger_term_with_constr cg env ty tte1 in
           match res with
             | Some l => 
                 let res' := interpret_trigger_term_with_constr cg env (Array.get ca nbmut) tte2 in
                   match res' with
-                    | Some l' => Some (List.append l l')
+                    | Some l' => Some (cons_option (interpret_flag c fl) (List.append l l'))
                     | None => None
                   end
             | None => None
           end
-    | _, TTerm c' b => 
+    | _, TTerm c' fl => 
       if equal c c' then 
-        if b then 
-          if is_closed c then Some [c] else Control.throw (NotClosed "the interpretation cannot return an open term")
-        else Some [] 
+        if is_closed c then Some (cons_option (interpret_flag c fl) [c]) 
+        else Control.throw (NotClosed "the interpretation cannot return an open term")
       else None
-    | _, TType t b => 
+    | _, TType t fl => 
         if equal (type c) t then
-          if b then 
-            if is_closed t then Some [t] else Control.throw (NotClosed "the interpretation cannot return an open term")
-          else Some []  
+          if is_closed t then Some (cons_option (interpret_flag c fl) [t]) else Control.throw (NotClosed "the interpretation cannot return an open term")
         else None
     | _, TTrigVar v fl => 
       let opt := interpret_trigger_var_with_constr cg env v c in
         match opt with
-          | Some t => 
-              match fl with
-                | Flag_term => Some [t]
-                | Flag_type => Some [type t]
-                | Flag_unneeded => Some []
-              end
+          | Some t => Some (cons_option (interpret_flag c fl) [])
           | None => None
         end
-    | _, TAny fl => 
-      match fl with
-        | Flag_term => if is_closed c then Some [c] 
+    | _, TAny fl => if is_closed c then Some (cons_option (interpret_flag c fl) [c])
             else Control.throw (NotClosed "the interpretation cannot return an open term")
-        | Flag_type => let ty := type c in if is_closed ty then Some [ty]
-            else Control.throw (NotClosed "the interpretation cannot return an open term")
-        | Flag_unneeded => Some []
-      end
     | _, _ => None
   end.
 
@@ -468,7 +434,7 @@ Ltac2 interpret_trigger_is cg env a b :=
                   let opt := interpret_trigger_term_with_constr cg env z b in 
                     match opt with
                       | None => aux cg xs b
-                      | Some l => Some ([&x], l)
+                      | Some l => Some (&x, l)
                     end
             end in aux cg hyps b
       | Goal None => None
@@ -476,13 +442,13 @@ Ltac2 interpret_trigger_is cg env a b :=
           let opt := interpret_trigger_term_with_constr cg env x b in 
             match opt with
               | None => None
-              | Some y => Some ([x], y)
+              | Some y => Some (x, y)
             end
       | Constr c => 
           let opt := interpret_trigger_term_with_constr cg env c b in 
             match opt with
               | None => None
-              | Some y => Some ([c], y)
+              | Some y => Some (c, y)
             end
     end.
 
@@ -546,13 +512,17 @@ Ltac2 closed_subterms c := List.filter is_closed (subterms c).
 
 
 (* warning: no arguments for this tactic *)
-Ltac2 interpret_trigger_pred cg env a p :=
+Ltac2 interpret_trigger_pred cg env a fl p :=
   let a' := interpret_trigger_var cg env a in
     match a' with
-      | Hyps hyps => if List.exist (fun (x, y, z) => p z) hyps then Some [] else None
+      | Hyps hyps => 
+          match List.find_opt (fun (x, y, z) => p z) hyps with 
+            | Some (x, y, z) => Some (cons_option (interpret_flag &x fl) [])
+            | None => None
+          end 
       | Goal None => None
-      | Goal (Some x) => if p x then Some [] else None
-      | Constr c => if p c then Some [] else None
+      | Goal (Some x) => if p x then Some (cons_option (interpret_flag x fl) []) else None
+      | Constr c => if p c then Some (cons_option (interpret_flag c fl) []) else None
     end.
 
 Ltac2 rec interpret_trigger_contains_aux cg env (lc : constr list) (tf : trigger_term) :=
@@ -561,7 +531,7 @@ Ltac2 rec interpret_trigger_contains_aux cg env (lc : constr list) (tf : trigger
       | x :: xs => 
         match interpret_trigger_term_with_constr cg env x tf with
           | None => interpret_trigger_contains_aux cg env xs tf
-          | Some success => Some ([x], success)
+          | Some success => Some (x, success)
         end
     end.
 
@@ -634,21 +604,17 @@ Ltac2 interpret_trigger_contains cg env (scg : subterms_coq_goal) tv tf :=
 
 Ltac2 rec interpret_trigger cg env scg (t : trigger) : constr list option :=
   match t with
-    | TIs a Flag_unneeded b => Option.map snd (interpret_trigger_is cg env a b)
-    | TIs a Flag_type b => 
+    | TIs (a, fl) b =>
         match interpret_trigger_is cg env a b with
-          | Some (x, _)  => Some [type (List.hd x)] (* warning: either a trigger var as argument, or a list of constr *)
+          | Some (x, l) => Some (cons_option (interpret_flag x fl) l)
           | None => None
         end
-    | TIs a Flag_term b => Option.map fst (interpret_trigger_is cg env a b) (* warning: either a trigger var as argument, or a list of constr *)
-    | TPred a f => interpret_trigger_pred cg env a f
-    | TContains a Flag_unneeded b => Option.map snd (interpret_trigger_contains cg env scg a b)
-    | TContains a Flag_type b =>
+    | TPred (a, fl) p => interpret_trigger_pred cg env a fl p
+    | TContains (a, fl) b => 
         match interpret_trigger_contains cg env scg a b with
-          | Some (x, _)  => Some [type (List.hd x)] (* warning: either a trigger var as argument, or a list of constr *)
+          | Some (x, l) => Some (cons_option (interpret_flag x fl) l)
           | None => None
         end
-    | TContains a Flag_term b => Option.map fst (interpret_trigger_contains cg env scg a b)
     | TConj t1 t2 => 
       match interpret_trigger cg env scg t1 with
         | Some res => 

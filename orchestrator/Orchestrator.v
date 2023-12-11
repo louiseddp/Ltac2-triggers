@@ -51,8 +51,9 @@ Ltac2 rec diff_hyps hs1 hs2 :=
 Defined in Triggers.v file *)
 
 
-(** The Orchestrator uses three states: 
+(** The Orchestrator uses four states: 
   - the hypotheses and the goal changed by the application of a previous tactic (or the initial goal)
+  - the local triggers variables 
   - the subterms of a term (goal or hypothesis) already computed 
   - the (non absolute) name of the tactics already triggered, with its arguments
 (warning: the tactics taking no arguments are NEVER considered as already triggered) *)  
@@ -61,6 +62,7 @@ Defined in Triggers.v file *)
 (* optimisation: do not reinterpret triggers when the tactic does nothing *)
 Ltac2 rec orchestrator_aux
   cg (* Coq Goal or modified Coq Goal *)
+  env (* local triggers variables *)
   scg (* Subterms already computed in the proof state *)
   trigs (* Triggers *)
   tacs (* Tactics (as strings, should have same length as triggers) *)
@@ -70,16 +72,16 @@ Ltac2 rec orchestrator_aux
     | _ :: _, [] => fail "you have more triggers than tactics"
     | [], [] => ()
     | trig :: trigs', (tac, name) :: tacs' => 
-         let it := interpret_trigger (cg.(cgstate)) scg trig in
+         let it := interpret_trigger (cg.(cgstate)) env scg trig in
          let _ := print_interpreted_trigger it in 
          match it with
           | None => let _ := printf "The following tactic was not triggered: %s" name  in 
-             orchestrator_aux cg scg trigs' tacs' trigtacs
+             orchestrator_aux cg env scg trigs' tacs' trigtacs
           | Some l => 
             if Bool.and (Bool.neg (Int.equal (List.length l) 0)) 
               (List.mem already_triggered_equal (name, l) (trigtacs.(triggered_tacs))) then 
                let _ := printf "%s was already applied" name in
-              orchestrator_aux cg scg trigs' tacs' trigtacs
+              orchestrator_aux cg env scg trigs' tacs' trigtacs
             else 
               (run tac l ;
               let _ := printf "Automatically applied %s" name in 
@@ -95,7 +97,7 @@ Ltac2 rec orchestrator_aux
                 | Some g1' => if Constr.equal g1' g2 then None else Some g2 
               end in
               cg.(cgstate) := (diff_hyps hs1 hs2, g3) ;     
-              orchestrator_aux cg scg trigs tacs trigtacs))
+              orchestrator_aux cg env scg trigs tacs trigtacs))
         end
   end.
 
@@ -104,8 +106,9 @@ Ltac2 rec orchestrator n trigs tacs trigtacs :=
   let g := Control.goal () in
   let hyps := Control.hyps () in
   let cg := { cgstate := (hyps, Some g) } in 
+  let env := { env_triggers := [] } in
   let scg := { subterms_coq_goal := ([], None) } in
-  orchestrator_aux cg scg trigs tacs trigtacs ; 
+  orchestrator_aux cg env scg trigs tacs trigtacs ; 
   Control.enter (fun () => orchestrator (Int.sub n 1) trigs tacs trigtacs).
 
 
