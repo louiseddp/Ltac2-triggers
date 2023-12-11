@@ -11,7 +11,7 @@ Ltac2 fail s := Control.backtrack_tactic_failure s.
 
 Ltac2 fst (x : 'a*'b) := let (y, _) := x in y.
 
-Ltac2 snd (x : 'a*'b) := let (y, _) := x in y.
+Ltac2 snd (x : 'a*'b) := let (_, y) := x in y.
 
 Ltac2 Type exn ::= [ NotClosed(string) ].
 
@@ -115,11 +115,12 @@ Ltac2 interpret_trigger_var_with_constr cg env tv c :=
           let l := List.find_all (fun (_, _, z) => equal z c) hyps in 
             match l with
               | [] => None
-              | (_, _, z) :: xs => Some z
+              | (_, _, z) :: xs => Some z 
             end
       | Goal (Some g) => if equal g c then Some g else None
       | Goal None => None
       | Constr c => Some c
+
     end.
 
 Ltac2 destruct_eq (c : constr) :=
