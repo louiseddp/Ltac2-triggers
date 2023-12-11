@@ -8,8 +8,6 @@ Require Import Printer.
 Require Import Triggers.
 Require Import Tactics.
 
-Ltac2 fail s := Control.backtrack_tactic_failure s.
-
 Ltac2 Type cgstate := 
   { mutable cgstate : ((ident * constr option * constr) list)*(constr option) }.
 
