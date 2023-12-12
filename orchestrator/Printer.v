@@ -43,6 +43,9 @@ Ltac2 print_interpreted_trigger int_tr :=
 print (concat_list ((of_string "Some") :: mes))
   end.
 
+Ltac2 print_env env :=
+List.iter (fun (x, y) => print (concat_list [of_string x; of_string "is"; of_constr y])) env.
+
 Ltac2 print_state cg :=
 let (hs, g) := cg in 
 print (of_string "The goal in the state is") ;

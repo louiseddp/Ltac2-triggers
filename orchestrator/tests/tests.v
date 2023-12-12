@@ -17,18 +17,36 @@ Ltac2 env_triggers () :=
 
 Ltac2 test_trigger (t: trigger) :=
   let init := initial_state () in
-  let res := interpret_trigger init (env_triggers ()) (initial_computed_subterms ()) t in
+  let env := env_triggers () in
+  let initcomp := initial_computed_subterms () in
+  let res := interpret_trigger init env initcomp t in
   print_interpreted_trigger res.
+
+ 
+Ltac2 test_anon () :=
+  TBind (TContains (TSomeHyp, Arg Constr.type) (TLambda tDiscard tDiscard (Arg id))) ["H"; "f"]
+  (TNot (TBind (TContains (TNamed "H", NotArg) (TCase tDiscard tDiscard None (Arg id))) ["c"]
+  (TContains (TNamed "c", NotArg) (TTrigVar (TNamed "f") NotArg)))).
+
+(* anonymous funs *)
+
+Lemma test u : match u with | 0 => True | S u => False end (* -> (fun x : nat => x) u = u *) -> False.
+intros H (* H1 *). test_trigger (test_anon ()). Abort.
+
+Lemma test u : (fun x : nat => x) u = u -> False.
+intros H (* H1 *). test_trigger (test_anon ()). Abort.
+
+
 
 (** Test De Brujin indexes, eq and anonymous functions **) 
 
 Goal forall (n: nat), (fun x => x) n = n.
 intros n.
-test_trigger (TContains TGoal Flag_unneeded  (TRel 1)). 
-test_trigger (TContains TGoal  Flag_unneeded (TLambda (TTerm 'nat true) tDiscard)).
-test_trigger (TContains TGoal Flag_unneeded (TLambda tDiscard (TRel 1))). (* warning: as in 
+test_trigger (TContains (TGoal , NotArg)  (TRel 1 NotArg)). 
+test_trigger (TContains (TGoal, NotArg) (TLambda (TTerm 'nat (Arg id)) tDiscard NotArg)).
+test_trigger (TContains (TGoal, NotArg) (TLambda tDiscard (TRel 1 NotArg) NotArg)). (* warning: as in 
 the kernel, De Brujin indexes start with 1 *)
-test_trigger (TIs TGoal Flag_unneeded (TEq (TTerm 'nat true) tDiscard tDiscard)).
+test_trigger (TIs (TGoal, NotArg) (TEq (TTerm 'nat (Arg id)) tDiscard tDiscard (Arg id))).
 let g := Control.goal () in print_closed_subterms g.
 Abort.
 
@@ -40,11 +58,11 @@ fix length (l : list A) : nat := match l with
                                  | [] => 0
                                  | _ :: l' => S (length l')
                                  end).
-test_trigger (TContains TGoal Flag_unneeded (TConstant None Flag_type)).
-test_trigger (TContains TGoal Flag_unneeded (TConstant (Some "length") Flag_type)).
-test_trigger (TContains TGoal Flag_unneeded (TFix tDiscard tDiscard)).
-test_trigger (TContains TGoal Flag_unneeded (TFix tDiscard tDiscard)).
-test_trigger (TContains TGoal Flag_unneeded (TCase tDiscard tDiscard (Some [TTerm '0 false; tDiscard]))).
+test_trigger (TContains (TGoal, NotArg) (TConstant None (Arg Constr.type))).
+test_trigger (TContains (TGoal, NotArg) (TConstant (Some "length") (Arg Constr.type))).
+test_trigger (TContains (TGoal, NotArg) (TFix tDiscard tDiscard NotArg)).
+test_trigger (TContains (TGoal, NotArg) (TFix tDiscard tDiscard NotArg)).
+test_trigger (TContains (TGoal, NotArg) (TCase tDiscard tDiscard (Some [TTerm '0 NotArg; tDiscard]) NotArg)).
 Abort.
 
 Goal  (forall A, @length A =
@@ -52,17 +70,18 @@ fix length (l : list A) : nat := match l with
                                  | [] => 0
                                  | _ :: l' => S (length l')
                                  end).
-Fail test_trigger (TContains TGoal Flag_unneeded (TFix (TAny Flag_term) tDiscard)).
-test_trigger (TContains TGoal Flag_unneeded (TFix tDiscard tDiscard)).
+Fail test_trigger (TContains (TGoal, NotArg) (TFix (TAny (Arg id)) tDiscard NotArg)).
+test_trigger (TContains (TGoal, NotArg) (TFix tDiscard tDiscard NotArg)).
 Abort.
 
 (* Test named *)
 
 Goal (forall (A B C : Prop), (A /\ B) -> (A /\ B) \/ C).
 intros A B C H.
-test_trigger (TIs TGoal Flag_unneeded (TOr tDiscard tDiscard)).
-test_trigger (TBind (TIs TGoal Flag_unneeded (TOr tArg tDiscard)) ["A"] (TIs (TNamed "A") Flag_unneeded (TAnd (TAny Flag_term) tDiscard))).
+test_trigger (TIs (TGoal, NotArg) (TOr tDiscard tDiscard NotArg)).
+test_trigger (TBind (TIs (TGoal, NotArg) (TOr tArg tDiscard NotArg)) ["A"] (TIs ((TNamed "A"), NotArg) (TAnd tArg tDiscard NotArg))).
 Abort.
+
 
 
 

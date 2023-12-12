@@ -554,7 +554,7 @@ Ltac2 interpret_trigger_contains cg env (scg : subterms_coq_goal) tv tf :=
     match v with
       | Hyps hyps => 
           let rec aux cg h b := 
-            match hyps with
+            match h with
               | [] => None
               | (x, y, z) :: xs => 
                   match look_for_subterms_hyps x (scg.(subterms_coq_goal)) with
@@ -636,7 +636,7 @@ Ltac2 interpret_trigger cg env scg (t : trigger) : constr list option :=
       end
 (* warning: "not" works only with no arguments *)
     | TNot t' => 
-        match interpret_trigger cg env scg t with
+        match interpret_trigger cg env scg t' with
           | Some _ => None
           | None => Some []
         end
@@ -645,7 +645,11 @@ Ltac2 interpret_trigger cg env scg (t : trigger) : constr list option :=
          match it1 with
            | Some lc => bind_triggers env lc ls ; 
               let it2 := interpret_trigger cg env scg t2 in 
-              let _ := env.(env_triggers) := List.skipn (List.length ls) (env.(env_triggers)) in it2
+              let _ := env.(env_triggers) := List.skipn (List.length ls) (env.(env_triggers)) in
+                match it2 with
+                  | Some res => Some res 
+                  | None => None (* backtracking TODO *)
+                end
            | None => None
           end
   end in match interpret_trigger cg env scg t with
