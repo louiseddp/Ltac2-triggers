@@ -84,12 +84,13 @@ Ltac2 trigger_algebraic_types :=
 Ltac2 trigger_generation_principle :=
   TDisj (TContains (TGoal, NotArg) (TInd None (Arg id))) (TContains (TSomeHyp, NotArg) (TInd None (Arg id))).
 
-(* TODO transform the tnamed into a formula *)
 Ltac2 trigger_anonymous_funs () :=
-  TDisj (TBind (TContains (TSomeHyp, Arg id) (TLambda tDiscard tDiscard NotArg)) ["H"]
-  (TNot (TContains (TNamed "H", NotArg) (TCase tDiscard tDiscard None NotArg))))
-  (TConj (TContains (TGoal, NotArg) (TLambda tDiscard tDiscard NotArg))
-  (TNot (TContains (TGoal, NotArg) (TCase tDiscard tDiscard None NotArg)))).  
+  TDisj (TBind (TContains (TSomeHyp, Arg id) (TLambda tDiscard tDiscard (Arg id))) ["H"; "f"]
+  (TNot (TBind (TContains (TNamed "H", NotArg) (TCase tDiscard tDiscard None (Arg id))) ["c"]
+  (TContains (TNamed "c", NotArg) (TTrigVar (TNamed "f") NotArg)))))
+  (TBind (TContains (TGoal, NotArg) (TLambda tDiscard tDiscard (Arg id))) ["f"]
+  (TNot (TBind (TContains (TGoal, NotArg) (TCase tDiscard tDiscard None (Arg id))) ["c"]
+  (TContains (TNamed "c", NotArg) (TTrigVar (TNamed "f") NotArg))))).
 
 (** warning A TNot is not interesting whenever all hypotheses are not considered !!! *)
 Ltac2 trigger_trakt_bool () :=

@@ -18,7 +18,7 @@ Ltac2 snd (x : 'a*'b) := let (_, y) := x in y.
 Ltac2 Type exn ::= [ NotClosed(string) ].
 
 Ltac2 Type flag :=
-  [ Arg (constr -> constr) | NotArg ]. (* TODO add int as pos *)
+  [ Arg (constr -> constr) | NotArg ]. (* TODO add int as position *)
 
 Ltac2 Type trigger_var := 
   [TGoal | TSomeHyp | TNamed (string) ].
@@ -403,14 +403,11 @@ the interpretation of our triggers *)
                   end
             | None => None
           end
-    | _, TTerm c' fl => 
-      if equal c c' then 
-        if is_closed c then Some (cons_option (interpret_flag c fl) [c]) 
-        else Control.throw (NotClosed "the interpretation cannot return an open term")
+    | _, TTerm c' fl =>
+      if equal c c' then Some (cons_option (interpret_flag c fl) [])
       else None
     | _, TType t fl => 
-        if equal (type c) t then
-          if is_closed t then Some (cons_option (interpret_flag c fl) [t]) else Control.throw (NotClosed "the interpretation cannot return an open term")
+        if equal (type c) t then Some (cons_option (interpret_flag t fl) [])
         else None
     | _, TTrigVar v fl => 
       let opt := interpret_trigger_var_with_constr cg env v c in
@@ -418,8 +415,7 @@ the interpretation of our triggers *)
           | Some t => Some (cons_option (interpret_flag c fl) [])
           | None => None
         end
-    | _, TAny fl => if is_closed c then Some (cons_option (interpret_flag c fl) [c])
-            else Control.throw (NotClosed "the interpretation cannot return an open term")
+    | _, TAny fl => Some (cons_option (interpret_flag c fl) [])
     | _, _ => None
   end.
 
@@ -428,13 +424,13 @@ Ltac2 interpret_trigger_is cg env a b :=
     match a' with
       | Hyps hyps =>
           let rec aux cg h b := 
-            match hyps with
+            match h with
               | [] => None
               | (x, y, z) :: xs => 
                   let opt := interpret_trigger_term_with_constr cg env z b in 
                     match opt with
                       | None => aux cg xs b
-                      | Some l => Some (&x, l)
+                      | Some l => Some (Control.hyp x, l)
                     end
             end in aux cg hyps b
       | Goal None => None
@@ -531,7 +527,7 @@ Ltac2 rec interpret_trigger_contains_aux cg env (lc : constr list) (tf : trigger
       | x :: xs => 
         match interpret_trigger_term_with_constr cg env x tf with
           | None => interpret_trigger_contains_aux cg env xs tf
-          | Some success => Some (x, success)
+          | Some success => Some success
         end
     end.
 
@@ -569,13 +565,13 @@ Ltac2 interpret_trigger_contains cg env (scg : subterms_coq_goal) tv tf :=
                         let opt := interpret_trigger_contains_aux cg env lc b in 
                           match opt with
                             | None => aux cg xs b
-                            | Some l => Some l
+                            | Some l => Some (Control.hyp x, l)
                         end
                     | Some lc => 
                         let opt := interpret_trigger_contains_aux cg env lc b in 
                           match opt with
                             | None => aux cg xs b
-                            | Some l => Some l
+                            | Some l => Some (Control.hyp x, l)
                         end
                     end
              end in aux cg hyps tf
@@ -589,20 +585,25 @@ Ltac2 interpret_trigger_contains cg env (scg : subterms_coq_goal) tv tf :=
               let opt := interpret_trigger_contains_aux cg env lc tf in 
                 match opt with
                   | None => None
-                  | Some l => Some l
+                  | Some l => Some (g, l)
                 end
-            | Some lc => interpret_trigger_contains_aux cg env lc tf
+            | Some lc =>
+                match interpret_trigger_contains_aux cg env lc tf with
+                  | None => None
+                  | Some res => Some (g, res)
+                end
           end
       | Constr c => 
           let lc := subterms c in
           let opt := interpret_trigger_contains_aux cg env lc tf in 
             match opt with
               | None => None
-              | Some l => Some l
+              | Some l => Some (c, l)
             end
     end.
 
-Ltac2 rec interpret_trigger cg env scg (t : trigger) : constr list option :=
+Ltac2 interpret_trigger cg env scg (t : trigger) : constr list option :=
+  let rec interpret_trigger cg env scg t := 
   match t with
     | TIs (a, fl) b =>
         match interpret_trigger_is cg env a b with
@@ -647,7 +648,11 @@ Ltac2 rec interpret_trigger cg env scg (t : trigger) : constr list option :=
               let _ := env.(env_triggers) := List.skipn (List.length ls) (env.(env_triggers)) in it2
            | None => None
           end
-  end.
+  end in match interpret_trigger cg env scg t with
+           | None => None
+           | Some l => if List.for_all is_closed l then Some l 
+              else Control.throw (NotClosed "the interpretation of a trigger cannot return open terms")
+           end.
 
 (* TODO : We should list the arguments that the tactic should not use *)
 (* TODO : improve the selection of args by designating their order (an integer) and an Ltac2 function f: constr -> constr.
