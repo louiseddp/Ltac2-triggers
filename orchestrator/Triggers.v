@@ -28,6 +28,15 @@ Ltac2 Type trigger_var :=
 Ltac2 Type env_triggers := 
 { mutable env_triggers : (string*constr) list }.
 
+(* environment for hypotheses we looked at *)
+Ltac2 Type env_hyps :=
+{ mutable env_hyps : ident list }.
+
+(* environment for pairs between and subterms we looked at *)
+
+Ltac2 Type env_hyps_subterms :=
+{ mutable env_hyps_subterms : constr list }.
+
 (* TODO ask the diff between meta and evar in Constr.v file *)
 
 Ltac2 Type trigger_sort :=
@@ -268,7 +277,7 @@ the variable would escape its scope. We can only use their type, or discard them
           end
 (* Sorts: we do not want to deal with universes, as we are afraid 
 this may introduce difficulties which are unrelated to our main goal, 
-but we want to distinguish between Prop, Set and Type_i, i > 1 *)
+but we want to distinguish between Prop, Set and Type_i, i >= 0 *)
     | Sort s, TSort ts fl =>
         match ts with
           | TProp => if equal c 'Prop then Some (cons_option (interpret_flag c fl) []) else None
@@ -419,7 +428,7 @@ the interpretation of our triggers *)
     | _, _ => None
   end.
 
-Ltac2 interpret_trigger_is cg env a b :=
+Ltac2 interpret_trigger_is cg env env_args env_binders a b :=
   let a' := interpret_trigger_var cg env a in
     match a' with
       | Hyps hyps =>
@@ -507,7 +516,7 @@ Ltac2 rec subterms (c : constr) : constr list :=
 Ltac2 closed_subterms c := List.filter is_closed (subterms c).
 
 
-(* warning: no arguments for this tactic *)
+(* warning: no arguments for this tactic except the toplevel one *)
 Ltac2 interpret_trigger_pred cg env a fl p :=
   let a' := interpret_trigger_var cg env a in
     match a' with
@@ -602,6 +611,31 @@ Ltac2 interpret_trigger_contains cg env (scg : subterms_coq_goal) tv tf :=
             end
     end.
 
+Ltac2 rec no_bind (t : trigger) :=
+  match t with
+    | TIs _ _ | TPred _ _ | TContains _ _ => true
+    | TNot t' => no_bind t'
+    | TConj t1 t2 | TDisj t1 t2 => Bool.and (no_bind t1) (no_bind t2)
+    | TBind _ _ _ => false
+  end.
+
+(* we allow binders only at toplevel *)
+Ltac2 rec well_formed_trigger (t : trigger) :=
+  match t with
+    | TIs _ _ | TPred _ _ | TContains _ _ => ()
+    | TNot t' => well_formed_trigger t'
+    | TConj t1 t2 | TDisj t1 t2 => well_formed_trigger t1 ; well_formed_trigger t2
+    | TBind t1 _ t2 => well_formed_trigger t1 ; if no_bind t2 then () else fail "not well-formed trigger"
+  end.
+
+(* TODO : 
+Easy backtracking:
+Bind TContains => try with new subterms and if it doesn't work try a new hyp
+Bind TIs => change the hyp
+Bind TNot t => no args so useless 
+Bind TConj / TDisj => distributes Bind recursively
+Bind TDisj => Bind the same number of arg on each disjunct whereas Bind TConj split the arguments between each conjunct *)
+
 Ltac2 interpret_trigger cg env scg (t : trigger) : constr list option :=
   let rec interpret_trigger cg env scg t := 
   match t with
@@ -652,11 +686,12 @@ Ltac2 interpret_trigger cg env scg (t : trigger) : constr list option :=
                 end
            | None => None
           end
-  end in match interpret_trigger cg env scg t with
-           | None => None
-           | Some l => if List.for_all is_closed l then Some l 
-              else Control.throw (NotClosed "the interpretation of a trigger cannot return open terms")
-           end.
+  end in 
+  match interpret_trigger cg env scg t with
+    | None => None
+    | Some l => if List.for_all is_closed l then Some l 
+        else Control.throw (NotClosed "the interpretation of a trigger cannot return open terms")
+  end.
 
 (* TODO : We should list the arguments that the tactic should not use *)
 (* TODO : improve the selection of args by designating their order (an integer) and an Ltac2 function f: constr -> constr.
