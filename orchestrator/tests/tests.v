@@ -2,6 +2,9 @@ Require Import Orchestrator.Triggers.
 Require Import Orchestrator.Printer.
 Require Import List.
 From Ltac2 Require Import Ltac2.
+From Ltac2 Require Import Constr.
+Import Unsafe.
+From Ltac2 Require Import Message.
 Import ListNotations.
 
 Ltac2 initial_state () :=
@@ -21,22 +24,22 @@ Ltac2 test_trigger (t: trigger) :=
   let initcomp := initial_computed_subterms () in
   let res := interpret_trigger init env initcomp t in
   print_interpreted_trigger res.
-
  
 Ltac2 test_anon () :=
-  TBind (TContains (TSomeHyp, Arg Constr.type) (TLambda tDiscard tDiscard (Arg id))) ["H"; "f"]
-  (TNot (TBind (TContains (TNamed "H", NotArg) (TCase tDiscard tDiscard None (Arg id))) ["c"]
+  TMetaLetIn (TContains (TSomeHyp, Arg Constr.type) (TLambda tDiscard tDiscard (Arg id))) ["H"; "f"]
+  (TNot (TMetaLetIn (TContains (TNamed "H", NotArg) (TCase tDiscard tDiscard None (Arg id))) ["c"]
   (TContains (TNamed "c", NotArg) (TTrigVar (TNamed "f") NotArg)))).
 
-(* anonymous funs *)
+(* anonymous funs that are not branches of match *)
 
-Lemma test u : match u with | 0 => True | S u => False end (* -> (fun x : nat => x) u = u *) -> False.
-intros H (* H1 *). test_trigger (test_anon ()). Abort.
+Lemma test u : match u with | 0 => True | S u => False end -> (fun x : nat => x) u = u  -> False.
+intros H H1. test_trigger (test_anon ()). Abort.
 
 Lemma test u : (fun x : nat => x) u = u -> False.
-intros H (* H1 *). test_trigger (test_anon ()). Abort.
+intros H. test_trigger (test_anon ()). Abort.
 
-
+Lemma test u : match u with | 0 => True | S u => False end -> False.
+intros H. test_trigger (test_anon ()). Abort.
 
 (** Test De Brujin indexes, eq and anonymous functions **) 
 
@@ -79,7 +82,7 @@ Abort.
 Goal (forall (A B C : Prop), (A /\ B) -> (A /\ B) \/ C).
 intros A B C H.
 test_trigger (TIs (TGoal, NotArg) (TOr tDiscard tDiscard NotArg)).
-test_trigger (TBind (TIs (TGoal, NotArg) (TOr tArg tDiscard NotArg)) ["A"] (TIs ((TNamed "A"), NotArg) (TAnd tArg tDiscard NotArg))).
+test_trigger (TMetaLetIn (TIs (TGoal, NotArg) (TOr tArg tDiscard NotArg)) ["A"] (TIs ((TNamed "A"), NotArg) (TAnd tArg tDiscard NotArg))).
 Abort.
 
 

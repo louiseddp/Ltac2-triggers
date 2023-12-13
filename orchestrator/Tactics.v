@@ -85,16 +85,16 @@ Ltac2 trigger_generation_principle :=
   TDisj (TContains (TGoal, NotArg) (TInd None (Arg id))) (TContains (TSomeHyp, NotArg) (TInd None (Arg id))).
 
 Ltac2 trigger_anonymous_funs () :=
-  TDisj (TBind (TContains (TSomeHyp, Arg id) (TLambda tDiscard tDiscard (Arg id))) ["H"; "f"]
-  (TNot (TBind (TContains (TNamed "H", NotArg) (TCase tDiscard tDiscard None (Arg id))) ["c"]
+  TDisj (TMetaLetIn (TContains (TSomeHyp, Arg id) (TLambda tDiscard tDiscard (Arg id))) ["H"; "f"]
+  (TNot (TMetaLetIn (TContains (TNamed "H", NotArg) (TCase tDiscard tDiscard None (Arg id))) ["c"]
   (TContains (TNamed "c", NotArg) (TTrigVar (TNamed "f") NotArg)))))
-  (TBind (TContains (TGoal, NotArg) (TLambda tDiscard tDiscard (Arg id))) ["f"]
-  (TNot (TBind (TContains (TGoal, NotArg) (TCase tDiscard tDiscard None (Arg id))) ["c"]
+  (TMetaLetIn (TContains (TGoal, NotArg) (TLambda tDiscard tDiscard (Arg id))) ["f"]
+  (TNot (TMetaLetIn (TContains (TGoal, NotArg) (TCase tDiscard tDiscard None (Arg id))) ["c"]
   (TContains (TNamed "c", NotArg) (TTrigVar (TNamed "f") NotArg))))).
 
 (** warning A TNot is not interesting whenever all hypotheses are not considered !!! *)
 Ltac2 trigger_trakt_bool () :=
-  TBind (TNot (TIs (TSomeHyp, Arg id) (TEq (TInd (Some "bool") NotArg) tDiscard tDiscard NotArg))) ["H"]
+  TMetaLetIn (TNot (TIs (TSomeHyp, Arg id) (TEq (TInd (Some "bool") NotArg) tDiscard tDiscard NotArg))) ["H"]
   (TIs (TNamed "H", NotArg) (TType 'Prop NotArg)).
 
 (* Ltac2 trigger_trakt_Z_bool := *)
