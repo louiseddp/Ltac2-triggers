@@ -18,11 +18,15 @@ Ltac2 initial_computed_subterms () :=
 Ltac2 env_triggers () :=
   { env_triggers := [] }.
 
+Ltac2 args_used () :=
+  { args_used := [['unit]] }. (* arbitrary "already used argument" for tests only *)
+
 Ltac2 test_trigger (t: trigger) :=
   let init := initial_state () in
   let env := env_triggers () in
   let initcomp := initial_computed_subterms () in
-  let res := interpret_trigger init env initcomp t in
+  let args := args_used () in
+  let res := interpret_trigger init env args initcomp t in
   print_interpreted_trigger res.
  
 Ltac2 test_anon () :=
@@ -83,6 +87,10 @@ Goal (forall (A B C : Prop), (A /\ B) -> (A /\ B) \/ C).
 intros A B C H.
 test_trigger (TIs (TGoal, NotArg) (TOr tDiscard tDiscard NotArg)).
 test_trigger (TMetaLetIn (TIs (TGoal, NotArg) (TOr tArg tDiscard NotArg)) ["A"] (TIs ((TNamed "A"), NotArg) (TAnd tArg tDiscard NotArg))).
+Abort.
+
+Goal unit.
+test_trigger (TIs (TGoal, NotArg) (TTerm 'unit (Arg id))). (* unit is in the list of used arguments *)
 Abort.
 
 
