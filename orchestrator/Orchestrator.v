@@ -14,6 +14,12 @@ Ltac2 Type cgstate :=
 Ltac2 Type triggered_tacs :=
   { mutable triggered_tacs : (string * constr list) list }.
 
+Ltac2 get_args_used name trigtacs :=
+  let l := trigtacs.(triggered_tacs) in
+  let l' := List.filter (fun (x, y) => String.equal name x) l in
+  let l'' := List.map (fun (x, y) => y) l' in
+  { args_used := l'' }.
+
 (** Equalities between already triggered tactics of type (string*constr list)
 and between two hypotheses *)
 
@@ -72,7 +78,8 @@ Ltac2 rec orchestrator_aux
     | _ :: _, [] => fail "you have more triggers than tactics"
     | [], [] => ()
     | trig :: trigs', (tac, name) :: tacs' => 
-         let it := interpret_trigger (cg.(cgstate)) env scg trig in
+         let env_args := get_args_used name trigtacs in
+         let it := interpret_trigger (cg.(cgstate)) env env_args scg trig in
          let _ := print_interpreted_trigger it in 
          match it with
           | None => let _ := printf "The following tactic was not triggered: %s" name  in 
